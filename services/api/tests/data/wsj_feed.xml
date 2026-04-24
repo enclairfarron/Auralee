@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>WSJ Markets</title>
+<link>https://www.wsj.com</link>
+<description>test feed</description>
+<item>
+  <title>Apple beats Q2</title>
+  <link>https://www.wsj.com/articles/apple-q2-12345</link>
+  <guid>WP-AAPL-1</guid>
+  <pubDate>Fri, 24 Apr 2026 13:30:00 GMT</pubDate>
+</item>
+<item>
+  <title>Markets Snapshot Video</title>
+  <link>https://www.wsj.com/video/snapshot-99</link>
+  <guid>WP-VID-1</guid>
+  <pubDate>Fri, 24 Apr 2026 14:00:00 GMT</pubDate>
+</item>
+</channel></rss>
