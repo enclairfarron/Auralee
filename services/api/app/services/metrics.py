@@ -1,0 +1,54 @@
+from collections import Counter
+from typing import Any
+
+from app.models.article import Article
+
+
+def aggregate_daily_metrics(articles: list[Article], date_str: str) -> dict[str, Any]:
+    total = len(articles)
+    by_source = Counter(a.source for a in articles)
+    by_sentiment = Counter(a.sentiment.label for a in articles)
+    ticker_counter: Counter[str] = Counter()
+    for a in articles:
+        ticker_counter.update(a.tickers)
+
+    sanity_passes = sum(
+        1 for a in articles if a.sanity_check and a.sanity_check.ticker_precision_pass
+    )
+    sanity_judged = sum(1 for a in articles if a.sanity_check is not None)
+
+    judged = [a for a in articles if a.eval_score is not None]
+    avg_judge = (
+        sum(a.eval_score.score for a in judged if a.eval_score) / len(judged) if judged else 0.0
+    )
+    avg_latency = sum(a.gemini_meta.latency_ms for a in articles) / total if total else 0
+    cost_total = sum(a.gemini_meta.cost_usd for a in articles)
+
+    # M2 <-> M3 disagreement
+    disagreement = 0
+    cross_evaluated = 0
+    for a in articles:
+        if not a.sanity_check or not a.eval_score:
+            continue
+        cross_evaluated += 1
+        if a.sanity_check.ticker_precision_pass and a.eval_score.score < 4:
+            disagreement += 1
+        elif (not a.sanity_check.ticker_precision_pass) and a.eval_score.score > 7:
+            disagreement += 1
+
+    return {
+        "date": date_str,
+        "articles_total": total,
+        "by_source": dict(by_source),
+        "by_sentiment": dict(by_sentiment),
+        "ticker_extraction_rate": (sum(1 for a in articles if a.tickers) / total if total else 0.0),
+        "unique_tickers_seen": len(ticker_counter),
+        "top_tickers": [{"ticker": t, "count": c} for t, c in ticker_counter.most_common(10)],
+        "gemini_cost_usd_total": round(cost_total, 6),
+        "gemini_avg_latency_ms": int(avg_latency),
+        "ingest_errors_total": 0,  # populated separately from runs
+        "m2_precision_pass_rate": (sanity_passes / sanity_judged if sanity_judged else 0.0),
+        "m3_avg_score": round(avg_judge, 3),
+        "m2_m3_disagreement_count": disagreement,
+        "m2_m3_disagreement_rate": (disagreement / cross_evaluated if cross_evaluated else 0.0),
+    }
