@@ -1,9 +1,11 @@
 from functools import lru_cache
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, Header, HTTPException, status
 
 from app.config import Settings, get_settings
+from app.http_client import make_client
 from app.services.firestore_repo import FirestoreRepo
 from app.services.gcs import RawHtmlArchiver
 from app.services.gemini import GeminiExtractor
@@ -48,3 +50,8 @@ def get_ingest_service(
     archiver: Annotated[RawHtmlArchiver, Depends(get_archiver)],
 ) -> IngestService:
     return IngestService(repo=repo, extractor=extractor, archiver=archiver)
+
+
+@lru_cache(maxsize=1)
+def get_http_client() -> httpx.AsyncClient:
+    return make_client()
