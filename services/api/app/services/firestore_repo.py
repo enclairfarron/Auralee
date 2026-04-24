@@ -122,3 +122,18 @@ class FirestoreRepo:
 
     def set_ticker_active(self, ticker: str, active: bool) -> None:
         self._client.collection("prices").document(ticker).update({"is_active": active})
+
+    def list_runs(
+        self, kind: str | None = None, source: str | None = None, limit: int = 50
+    ) -> list[Run]:
+        coll = self._client.collection("runs")
+        query = coll.order_by("started_at", direction=firestore.Query.DESCENDING).limit(limit)
+        if kind:
+            query = query.where("kind", "==", kind)
+        if source:
+            query = query.where("source", "==", source)
+        return [Run.model_validate(d.to_dict()) for d in query.stream()]
+
+    def get_run(self, run_id: str) -> Run | None:
+        doc = cast(DocumentSnapshot, self._client.collection("runs").document(run_id).get())
+        return Run.model_validate(doc.to_dict()) if doc.exists else None
