@@ -12,6 +12,10 @@ from app.models.article import (
     SanityCheck,
     Sentiment,
 )
+from app.models.candidate import Candidate
+from app.models.ingest import IngestPayload, RawHtml, RawText
+from app.models.price import DailyOHLC, Price
+from app.models.run import Run, RunError
 
 
 def test_sentiment_score_must_be_in_range() -> None:
@@ -85,3 +89,72 @@ def test_eval_score_with_issues() -> None:
         reasoning="...",
     )
     assert 0 <= e.score <= 10
+
+
+def test_price_and_daily_ohlc() -> None:
+    Price(
+        ticker="AAPL",
+        name="Apple Inc.",
+        exchange="NASDAQ",
+        currency="USD",
+        first_seen_at=datetime.now(UTC),
+        last_refreshed_at=datetime.now(UTC),
+        is_active=True,
+    )
+    DailyOHLC(
+        date="2026-04-24",
+        open=1.0,
+        high=2.0,
+        low=0.5,
+        close=1.5,
+        volume=100,
+        adj_close=1.5,
+        fetched_at=datetime.now(UTC),
+        source="yfinance",
+    )
+
+
+def test_run_with_errors() -> None:
+    r = Run(
+        id="abc",
+        kind="scrape",
+        source="wsj",
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        status="partial",
+        articles_attempted=10,
+        articles_ingested=8,
+        articles_skipped_dup=1,
+        errors=[RunError(url="u", stage="fetch", message="403")],
+        cost_usd=0.01,
+    )
+    assert r.kind == "scrape"
+    assert len(r.errors) == 1
+
+
+def test_ingest_payload_html_variant() -> None:
+    p = IngestPayload(
+        source="wsj",
+        source_id="x",
+        url="https://x",
+        fetched_at=datetime.now(UTC),
+        raw=RawHtml(kind="html", html="<html></html>", encoding="utf-8"),
+    )
+    assert p.raw.kind == "html"
+
+
+def test_ingest_payload_text_variant() -> None:
+    p = IngestPayload(
+        source="hn",
+        source_id="x",
+        url="https://x",
+        fetched_at=datetime.now(UTC),
+        raw=RawText(kind="text", title="t", body="b", metadata={}),
+    )
+    assert p.raw.kind == "text"
+
+
+def test_candidate_minimal() -> None:
+    c = Candidate(source_id="x", url="https://x")
+    assert c.title is None
+    assert c.published_at is None
