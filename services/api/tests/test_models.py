@@ -117,15 +117,27 @@ def test_price_and_daily_ohlc() -> None:
 def test_daily_ohlc_rejects_malformed_date() -> None:
     with pytest.raises(ValidationError):
         DailyOHLC(
-            date="not-a-date", open=1.0, high=2.0, low=0.5, close=1.5,
-            volume=100, adj_close=1.5,
-            fetched_at=datetime.now(UTC), source="yfinance",
+            date="not-a-date",
+            open=1.0,
+            high=2.0,
+            low=0.5,
+            close=1.5,
+            volume=100,
+            adj_close=1.5,
+            fetched_at=datetime.now(UTC),
+            source="yfinance",
         )
     with pytest.raises(ValidationError):
         DailyOHLC(
-            date="2026-13-99", open=1.0, high=2.0, low=0.5, close=1.5,
-            volume=100, adj_close=1.5,
-            fetched_at=datetime.now(UTC), source="yfinance",
+            date="2026-13-99",
+            open=1.0,
+            high=2.0,
+            low=0.5,
+            close=1.5,
+            volume=100,
+            adj_close=1.5,
+            fetched_at=datetime.now(UTC),
+            source="yfinance",
         )
 
 
