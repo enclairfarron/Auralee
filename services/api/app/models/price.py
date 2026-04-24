@@ -1,6 +1,7 @@
+from datetime import date as _date
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Price(BaseModel):
@@ -23,3 +24,12 @@ class DailyOHLC(BaseModel):
     adj_close: float
     fetched_at: datetime
     source: str = "yfinance"
+
+    @field_validator("date")
+    @classmethod
+    def _validate_date(cls, v: str) -> str:
+        try:
+            _date.fromisoformat(v)
+        except ValueError as e:
+            raise ValueError(f"date must be YYYY-MM-DD, got {v!r}") from e
+        return v
