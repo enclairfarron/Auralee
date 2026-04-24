@@ -1,0 +1,118 @@
+from datetime import UTC, datetime
+
+from app.models.article import (
+    Article,
+    GeminiMeta,
+    Sentiment,
+)
+from app.models.run import Run
+from app.services.firestore_repo import FirestoreRepo
+
+
+class _FakeDoc:
+    def __init__(self, data: dict | None = None) -> None:
+        self._data = data
+        self.exists = data is not None
+
+    def to_dict(self) -> dict | None:
+        return self._data
+
+
+class _FakeDocRef:
+    def __init__(self, store: dict, path: str) -> None:
+        self._store = store
+        self._path = path
+
+    def get(self) -> _FakeDoc:
+        return _FakeDoc(self._store.get(self._path))
+
+    def set(self, data: dict) -> None:
+        self._store[self._path] = data
+
+    def update(self, data: dict) -> None:
+        self._store[self._path] = {**self._store.get(self._path, {}), **data}
+
+
+class _FakeCollection:
+    def __init__(self, store: dict, prefix: str) -> None:
+        self._store = store
+        self._prefix = prefix
+
+    def document(self, doc_id: str) -> _FakeDocRef:
+        return _FakeDocRef(self._store, f"{self._prefix}/{doc_id}")
+
+    def add(self, data: dict) -> tuple[None, _FakeDocRef]:
+        import uuid
+
+        doc_id = str(uuid.uuid4())
+        ref = _FakeDocRef(self._store, f"{self._prefix}/{doc_id}")
+        ref.set(data)
+        return (None, ref)
+
+
+class _FakeClient:
+    def __init__(self) -> None:
+        self.store: dict[str, dict] = {}
+
+    def collection(self, name: str) -> _FakeCollection:
+        return _FakeCollection(self.store, name)
+
+
+def _sample_article(article_id: str = "wsj_20260424_a3f1b9d2") -> Article:
+    now = datetime.now(UTC)
+    return Article(
+        id=article_id,
+        source="wsj",
+        source_id="x",
+        url="https://x",
+        title="t",
+        published_at=now,
+        fetched_at=now,
+        processed_at=now,
+        language="en",
+        summary="s",
+        tickers=["AAPL"],
+        sentiment=Sentiment(score=0.5, label="bullish"),
+        core_thesis="c",
+        gemini_meta=GeminiMeta(
+            model="gemini-2.5-flash",
+            tokens_in=10,
+            tokens_out=5,
+            cost_usd=0.0001,
+            latency_ms=100,
+            prompt_version="v1",
+        ),
+    )
+
+
+def test_save_and_get_article() -> None:
+    repo = FirestoreRepo(_client=_FakeClient())
+    a = _sample_article()
+    repo.save_article(a)
+    fetched = repo.get_article(a.id)
+    assert fetched is not None
+    assert fetched.id == a.id
+
+
+def test_article_exists() -> None:
+    repo = FirestoreRepo(_client=_FakeClient())
+    a = _sample_article()
+    assert not repo.article_exists(a.id)
+    repo.save_article(a)
+    assert repo.article_exists(a.id)
+
+
+def test_save_run_assigns_id_when_blank() -> None:
+    repo = FirestoreRepo(_client=_FakeClient())
+    r = Run(id="", kind="scrape", source="hn", started_at=datetime.now(UTC))
+    saved_id = repo.save_run(r)
+    assert saved_id != ""
+
+
+def test_upsert_ticker_stub_creates_when_missing() -> None:
+    client = _FakeClient()
+    repo = FirestoreRepo(_client=client)
+    repo.upsert_ticker_stub("AAPL")
+    assert "prices/AAPL" in client.store
+    assert client.store["prices/AAPL"]["ticker"] == "AAPL"
+    assert client.store["prices/AAPL"]["is_active"] is True
