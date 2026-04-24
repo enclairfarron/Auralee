@@ -1,14 +1,32 @@
 import hashlib
 from datetime import UTC, datetime
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.models.article import Source
+
+_TRACKING_PARAM_PREFIXES = ("utm_",)
+_TRACKING_PARAMS = frozenset({"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "mod"})
+
+
+def _strip_tracking(query: str) -> str:
+    if not query:
+        return ""
+    pairs = parse_qsl(query, keep_blank_values=True)
+    keep = [
+        (k, v)
+        for k, v in pairs
+        if not any(k.startswith(p) for p in _TRACKING_PARAM_PREFIXES)
+        and k.lower() not in _TRACKING_PARAMS
+    ]
+    return urlencode(keep)
 
 
 def _normalize_url(url: str) -> str:
     p = urlparse(url)
+    netloc = p.netloc.lower()  # I2: hosts are case-insensitive (RFC 3986)
     path = p.path.rstrip("/") or "/"
-    return urlunparse((p.scheme, p.netloc, path, "", p.query, ""))
+    query = _strip_tracking(p.query)
+    return urlunparse((p.scheme, netloc, path, "", query, ""))
 
 
 def compute_article_id(source: Source, published_at: datetime, url: str) -> str:

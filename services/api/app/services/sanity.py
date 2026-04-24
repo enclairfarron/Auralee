@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import UTC, datetime
 from functools import lru_cache
 from importlib.resources import files
@@ -13,10 +14,19 @@ def _ticker_dictionary() -> dict[str, list[str]]:
     return cast(dict[str, list[str]], json.loads(raw))
 
 
+_TICKER_RE_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _ticker_pattern(ticker: str) -> re.Pattern[str]:
+    if ticker not in _TICKER_RE_CACHE:
+        _TICKER_RE_CACHE[ticker] = re.compile(rf"\b{re.escape(ticker)}\b", re.IGNORECASE)
+    return _TICKER_RE_CACHE[ticker]
+
+
 def _ticker_found_in_text(ticker: str, clean_text: str) -> bool:
-    text_lower = clean_text.lower()
-    if ticker.upper() in clean_text:
+    if _ticker_pattern(ticker).search(clean_text):
         return True
+    text_lower = clean_text.lower()
     aliases = _ticker_dictionary().get(ticker.upper(), [])
     return any(alias.lower() in text_lower for alias in aliases)
 

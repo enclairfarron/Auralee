@@ -34,3 +34,37 @@ def test_published_at_naive_treated_as_utc() -> None:
     aid_aware = compute_article_id("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://x")
     aid_naive = compute_article_id("hn", datetime(2026, 4, 24), "https://x")
     assert aid_aware == aid_naive
+
+
+def test_url_normalization_strips_utm_tracking() -> None:
+    args1 = (
+        "hn",
+        datetime(2026, 4, 24, tzinfo=UTC),
+        "https://example.com/x?utm_source=twitter&utm_medium=social",
+    )
+    args2 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://example.com/x?utm_source=email")
+    args3 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://example.com/x")
+    assert compute_article_id(*args1) == compute_article_id(*args2) == compute_article_id(*args3)
+
+
+def test_url_normalization_strips_wsj_mod_param() -> None:
+    args1 = (
+        "wsj",
+        datetime(2026, 4, 24, tzinfo=UTC),
+        "https://www.wsj.com/articles/foo?mod=hp_lead_pos1",
+    )
+    args2 = ("wsj", datetime(2026, 4, 24, tzinfo=UTC), "https://www.wsj.com/articles/foo")
+    assert compute_article_id(*args1) == compute_article_id(*args2)
+
+
+def test_url_normalization_preserves_meaningful_query_params() -> None:
+    # Some publishers route via ?id=... — must NOT be stripped
+    args1 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://example.com/article?id=12345")
+    args2 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://example.com/article?id=99999")
+    assert compute_article_id(*args1) != compute_article_id(*args2)
+
+
+def test_url_normalization_lowercases_host() -> None:
+    args1 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://Example.COM/x")
+    args2 = ("hn", datetime(2026, 4, 24, tzinfo=UTC), "https://example.com/x")
+    assert compute_article_id(*args1) == compute_article_id(*args2)
