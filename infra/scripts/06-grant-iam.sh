@@ -44,5 +44,15 @@ gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
 gcloud iam service-accounts add-iam-policy-binding "${CLOUDBUILD_SA}" \
   --member="serviceAccount:${DEPLOYER_SA}" --role=roles/iam.serviceAccountUser >/dev/null
 
-# Scheduler SA can invoke Cloud Run service (binding added after first deploy in script 08)
-log "Done. (Scheduler-to-RunInvoker binding deferred to script 08, after first deploy.)"
+# Scheduler SA can invoke the Cloud Run service (run once service is deployed).
+if gcloud run services describe "${SERVICE_NAME}" --region="${REGION}" >/dev/null 2>&1; then
+  log "Granting run.invoker on ${SERVICE_NAME} to scheduler SA"
+  gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --member="serviceAccount:${SCHEDULER_SA}" \
+    --role=roles/run.invoker >/dev/null
+else
+  log "Service ${SERVICE_NAME} not yet deployed; re-run 06 after first deploy."
+fi
+
+log "Done."
