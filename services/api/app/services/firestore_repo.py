@@ -116,3 +116,9 @@ class FirestoreRepo:
         self._client.collection("articles").document(article_id).update(
             {"eval_score": score.model_dump(mode="json")}
         )
+
+    def list_all_tickers(self) -> list[str]:
+        return [d.id for d in self._client.collection("prices").stream()]
+
+    def set_ticker_active(self, ticker: str, active: bool) -> None:
+        self._client.collection("prices").document(ticker).update({"is_active": active})

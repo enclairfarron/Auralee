@@ -15,6 +15,7 @@ from app.services.firestore_repo import FirestoreRepo
 from app.services.ingest_service import IngestService
 from app.services.judge import GeminiJudge
 from app.services.judge_runner import run_eval_judge
+from app.services.metrics_runner import aggregate_yesterday_metrics
 from app.services.prices import refresh_prices
 from app.services.scrape_runner import run_scrape
 from app.services.scrapers.base import BaseScraper
@@ -71,3 +72,10 @@ async def cron_eval_judge(
     judge: Annotated[GeminiJudge, Depends(get_judge)],
 ) -> dict[str, Any]:
     return await run_eval_judge(repo=repo, judge=judge)
+
+
+@router.post("/aggregate-metrics")
+async def cron_aggregate_metrics(
+    repo: Annotated[FirestoreRepo, Depends(get_repo)],
+) -> dict[str, Any]:
+    return await aggregate_yesterday_metrics(repo=repo)
