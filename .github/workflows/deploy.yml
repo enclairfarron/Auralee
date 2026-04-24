@@ -1,0 +1,53 @@
+name: Deploy auralee-api
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/api/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: auralee-api-server
+  REGION: us-east1
+  REPO: api
+  SERVICE: auralee-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: auralee-deployer@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Submit Cloud Build
+        working-directory: services/api
+        run: |
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --region=${REGION} \
+            --substitutions=_SHA=${GITHUB_SHA},_REGION=${REGION},_REPO=${REPO},_SERVICE=${SERVICE} \
+            .
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${GITHUB_SHA}" \
+            --region "$REGION" \
+            --no-allow-unauthenticated \
+            --service-account "auralee-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --memory 1Gi --cpu 1 \
+            --min-instances 0 --max-instances 3 \
+            --concurrency 10 --timeout 600 --execution-environment gen2 \
+            --set-env-vars "GCP_PROJECT=${PROJECT_ID},GCP_REGION=${REGION},LOG_LEVEL=INFO,PROMPT_VERSION=v1" \
+            --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
