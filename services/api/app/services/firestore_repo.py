@@ -6,7 +6,7 @@ from typing import Any, cast
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_document import DocumentSnapshot
 
-from app.models.article import Article
+from app.models.article import Article, EvalScore
 from app.models.price import DailyOHLC, Price
 from app.models.run import Run
 
@@ -99,3 +99,20 @@ class FirestoreRepo:
             .stream()
         )
         return [Article.model_validate(d.to_dict()) for d in docs]
+
+    def list_articles_needing_judge(
+        self, processed_after: datetime, limit: int = 200
+    ) -> list[Article]:
+        docs = (
+            self._client.collection("articles")
+            .where("processed_at", ">=", processed_after.isoformat())
+            .where("eval_score", "==", None)
+            .limit(limit)
+            .stream()
+        )
+        return [Article.model_validate(d.to_dict()) for d in docs]
+
+    def update_article_eval_score(self, article_id: str, score: EvalScore) -> None:
+        self._client.collection("articles").document(article_id).update(
+            {"eval_score": score.model_dump(mode="json")}
+        )
