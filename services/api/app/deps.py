@@ -10,6 +10,7 @@ from app.services.firestore_repo import FirestoreRepo
 from app.services.gcs import RawHtmlArchiver
 from app.services.gemini import GeminiExtractor
 from app.services.ingest_service import IngestService
+from app.services.judge import GeminiJudge
 from app.services.secrets import SecretClient
 
 
@@ -55,3 +56,9 @@ def get_ingest_service(
 @lru_cache(maxsize=1)
 def get_http_client() -> httpx.AsyncClient:
     return make_client()
+
+
+@lru_cache(maxsize=1)
+def get_judge() -> GeminiJudge:
+    s = get_settings()
+    return GeminiJudge(api_key=s.gemini_api_key, model=s.judge_model)
