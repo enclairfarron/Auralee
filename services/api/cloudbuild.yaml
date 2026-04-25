@@ -1,6 +1,8 @@
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build
+    env:
+      - 'DOCKER_BUILDKIT=1'
     args:
       - build
       - --tag=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${_SHA}
