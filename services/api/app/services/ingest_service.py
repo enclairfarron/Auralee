@@ -12,7 +12,11 @@ from app.services.sanity import check_ticker_precision
 
 logger = logging.getLogger(__name__)
 
-_MIN_CLEAN_TEXT_CHARS = 500
+# Lowered from 500 -> 200 to accommodate RSS-description-only sources
+# (MarketWatch where Cloud Run can't HTTP-fetch full articles due to anti-bot 401).
+# WSJ paywall HTML extracts to <500 chars but is detected separately by the
+# WSJ scraper's keyword check, so this lower bound doesn't weaken paywall detection.
+_MIN_CLEAN_TEXT_CHARS = 200
 
 
 class IngestService:

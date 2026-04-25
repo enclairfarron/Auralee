@@ -1,11 +1,11 @@
 import logging
+import re
 from datetime import UTC, datetime
 
 import feedparser
 
-from app.http_client import UA_DESKTOP
 from app.models.candidate import Candidate
-from app.models.ingest import IngestPayload, RawHtml
+from app.models.ingest import IngestPayload, RawText
 from app.services.scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class ReutersScraper(BaseScraper):
                     url=url,
                     title=entry.get("title"),
                     published_at=published,
+                    description=_clean_html(entry.get("summary") or entry.get("description") or ""),
                 )
         return list(seen.values())
 
@@ -55,16 +56,29 @@ class ReutersScraper(BaseScraper):
         return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
 
     async def fetch_one(self, candidate: Candidate) -> IngestPayload:
-        resp = await self._http.get(
-            candidate.url,
-            timeout=15.0,
-            headers={"User-Agent": UA_DESKTOP},
-        )
-        resp.raise_for_status()
+        # Dow Jones (MarketWatch/WSJ) blocks Cloud Run egress IPs with 401.
+        # We don't HTTP-fetch the article URL; instead we use the RSS-provided
+        # title + description as the body. RSS descriptions are 200-500 chars
+        # of summary, enough for Gemini to extract ticker/sentiment/thesis.
+        body_parts = [candidate.title or "", candidate.description or ""]
+        body = "\n\n".join(p for p in body_parts if p)
         return IngestPayload(
             source="reuters",
             source_id=candidate.source_id,
             url=candidate.url,
             fetched_at=datetime.now(UTC),
-            raw=RawHtml(kind="html", html=resp.text),
+            raw=RawText(
+                kind="text",
+                title=candidate.title or "",
+                body=body,
+                metadata={"published_at": (candidate.published_at or datetime.now(UTC)).isoformat()},
+            ),
         )
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _clean_html(text: str) -> str:
+    """Strip HTML tags from RSS description (some feeds embed HTML)."""
+    return _TAG_RE.sub("", text).strip()
