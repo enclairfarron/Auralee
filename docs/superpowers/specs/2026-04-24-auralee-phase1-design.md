@@ -1107,3 +1107,90 @@ Once all items are checked, proceed to the implementation plan (written in a sep
 ## 13. Changelog
 
 - **2026-04-24** — v1 draft authored during brainstorm session; decisions D1–D11 finalized
+- **2026-04-25** — Phase 1 deployed; significant deviations recorded in §14
+
+---
+
+## 14. Phase 1 Deployment Findings (2026-04-25)
+
+Deployed and observed. Summary of deviations from the original spec:
+
+### Worked as designed
+- Single Cloud Run Service architecture (option A)
+- Firestore schema, doc IDs, GCS raw archive
+- Hacker News scraper end-to-end (≥27 articles ingested with full extraction)
+- M2 sanity check inline with `/ingest`
+- `/admin/*` endpoints (modulo `runs` composite index — see below)
+- 6 Cloud Scheduler jobs auto-running
+- Workload Identity Federation + GitHub Actions auto-deploy
+- Cost tracking (~$0.0003/article via Vertex AI)
+
+### Deviated — required fixes
+1. **Gemini billing model** (D4 superseded). AI Studio API keys require
+   prepayment credits in some accounts (returns 429 RESOURCE_EXHAUSTED).
+   Switched all Gemini calls to Vertex AI (`genai.Client(vertexai=True, ...)`)
+   so billing flows through the GCP project. Runtime SA needs
+   `roles/aiplatform.user`. No GEMINI_API_KEY secret needed.
+2. **Reuters RSS** is dead (`feeds.reuters.com` offline as of 2025).
+   Replaced with MarketWatch RSS (Dow Jones owned). Source enum still
+   labels these "reuters" — TODO Week 2 rename to "marketwatch".
+3. **MarketWatch full-article fetch** returns 401 from Cloud Run
+   (Dow Jones anti-bot blocks datacenter IPs). Scraper now uses RSS
+   `<description>` field as body instead of HTTP-fetching the article URL.
+   `_MIN_CLEAN_TEXT_CHARS` lowered 500 → 200 to accommodate.
+4. **`response_schema` Pydantic class** triggers a google-genai SDK quirk
+   that emits `additional_properties` in the protobuf. AI Studio rejected
+   it; Vertex AI accepts it. After the Vertex switch, response_schema
+   was re-enabled.
+5. **Cloud Build `--mount=type=cache`** requires BuildKit. Added
+   `DOCKER_BUILDKIT=1` env var on the cloudbuild step.
+6. **Deployer SA missing perms** for Cloud Build via GHA: needed
+   `serviceusage.serviceUsageConsumer`, `logging.viewer`, and
+   `storage.objectAdmin` on the auto-created `${PROJECT_ID}_cloudbuild`
+   bucket. `cloudbuild.builds.builder` (deprecated combined role) was
+   also added defensively.
+7. **ADMIN_TOKEN trailing newline** from `openssl rand -hex 32 | gcloud
+   secrets versions add ...` caused header-comparison failures. Re-uploaded
+   with `tr -d '\n'` filter.
+
+### Unfixed limitations (deferred to Week 2)
+1. **WSJ paywalled content scraping is impossible from server-side IPs.**
+   Akamai blocks all known datacenter ranges (Cloud Run, AWS Lambda, etc.)
+   regardless of cookie validity or TLS fingerprint. Diagnosis path
+   exhausted: tested httpx (TLS fingerprint), curl_cffi
+   (`impersonate=safari184` matches Safari JA3 perfectly), full browser
+   header set including Sec-Fetch-* — all return 401 from Cloud Run.
+   Same code from a residential IP (user's home network through VPN)
+   returns 200 + 714KB body. **Architecture fix for Week 2: move WSJ
+   scraping to the Tauri desktop client** (runs from user's residential
+   IP, naturally bypasses datacenter blocklist). The Phase 1 WSJ cron
+   continues to run hourly and fail — the failure rate is captured in
+   the `wsj_success_rate` Day-7 metric (will show 0%, accurately
+   reflecting reality).
+2. **Firestore composite index on `runs(kind, started_at desc)`** not
+   yet created. `/admin/runs?kind=scrape` returns 500 with a Firebase
+   console URL to one-click create the index. Manual click pending; the
+   error message is informative and the index is single-use.
+3. **MarketWatch source label says "reuters"** — Source enum + scheduler
+   job names still reference Reuters. Cosmetic but misleading.
+4. **`tickers.json` only 30 entries** — limits M2 precision check accuracy
+   for non-mega-cap names. SEC EDGAR has full list, deferred.
+5. **Cloud Run probe `/healthz` returns 404 from external curl** when
+   tested through some local proxies (Clash on 7890). The route IS
+   registered (visible in OpenAPI) and works fine via direct call /
+   Cloud Run's internal probe. Cosmetic, low priority.
+
+### Day-7 expected outcome (with current source mix)
+
+| Metric                    | Threshold | Realistic actual |
+|---------------------------|-----------|------------------|
+| volume/day                | >100      | likely PASS (HN 30/h × 24 + MW ~20-40/day) |
+| m2_precision_rate         | >90%      | depends on Gemini quality |
+| m3_avg_score              | >7.0      | depends |
+| m2_m3_disagreement_rate   | <5%       | depends |
+| price_signal_spread       | >1%       | depends — most HN/MW articles are non-financial |
+| avg_cost_per_article      | <$0.01    | likely PASS (~$0.0003) |
+| wsj_success_rate          | >80%      | **0% (deferred to Week 2)** |
+
+Day-7 evaluation must interpret `wsj_success_rate=0` as "expected,
+documented limitation" not "broken pipeline."

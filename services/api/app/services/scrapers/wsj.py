@@ -1,3 +1,34 @@
+"""WSJ scraper.
+
+KNOWN LIMITATION (Phase 1, deferred to Week 2):
+============================================================================
+WSJ uses Akamai/Datadome for anti-bot. Akamai's defenses combine:
+  1. TLS JA3 fingerprint check          -> bypassed via curl_cffi safari184
+  2. IP reputation (datacenter blocklist) -> NOT bypassable from Cloud Run
+
+Result: from any Cloud Run / GCP / AWS / Azure egress IP, WSJ returns 401
+even with a valid logged-in subscriber cookie + browser-real TLS fingerprint.
+The same code from a residential IP (e.g. user's home network through a VPN)
+returns 200 + full article body.
+
+This invalidates the original product premise of "server-side scraping of
+paywalled WSJ content using user's subscription cookie." The architecture
+fix is to move WSJ scraping to the desktop client (Tauri app on user's
+machine, runs from residential IP), planned for Week 2.
+
+For Phase 1, the WSJ cron continues to run hourly and fail (logs the
+attempt + result for the M2 evaluation metric). The /admin/runs collection
+captures per-run error counts. Day-7 evaluation will show
+wsj_success_rate = 0% — that's accurate and informative.
+
+Possible alternative paths NOT taken (cost / scope reasons):
+  - residential proxy service (BrightData/Oxylabs, $50-300/mo): out of PoC budget
+  - drop WSJ entirely: would change source enum / scheduler config / docs
+  - RSS-description fallback (like MarketWatch): defeats the "subscription
+    benefit" core value prop; user explicitly chose to defer instead
+============================================================================
+"""
+
 import logging
 from datetime import UTC, datetime
 
