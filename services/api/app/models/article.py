@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 Source = Literal["hn", "reuters", "wsj"]
 SentimentLabel = Literal["bullish", "bearish", "neutral"]
@@ -43,9 +43,14 @@ class EvalScore(BaseModel):
 
 
 class Extraction(BaseModel):
-    """Schema fed to Gemini as response_schema."""
+    """Schema fed to Gemini as response_schema.
 
-    model_config = ConfigDict(extra="forbid")
+    Note: ConfigDict(extra="forbid") was REMOVED — it generates
+    additionalProperties:false in the JSON schema, which the Gemini API rejects
+    with INVALID_ARGUMENT ('Unknown name "additional_properties"'). Without it
+    Gemini may technically include extra fields, but in practice with
+    response_schema enforcement that doesn't happen.
+    """
 
     title: str
     summary: str = Field(description="2-3 sentences in the SAME language as the article")
