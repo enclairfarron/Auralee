@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 
 import feedparser
 import httpx
+from curl_cffi.requests import AsyncSession
 
-from app.http_client import UA_SAFARI_MAC
 from app.models.candidate import Candidate
 from app.models.ingest import IngestPayload, RawHtml
 from app.services.scrapers.base import BaseScraper
@@ -69,28 +69,25 @@ class WSJScraper(BaseScraper):
         return datetime(y, m, d, h, mi, s, tzinfo=UTC)
 
     async def fetch_one(self, candidate: Candidate) -> IngestPayload:
-        # Full browser-equivalent header set. Without Sec-Fetch-* + Accept-Encoding
-        # WSJ returns 401 even with a valid logged-in cookie. With these headers
-        # WSJ accepts the request and follows redirects from /articles/X to its
-        # new /category/sub/X URL structure (httpx follow_redirects handles it).
-        resp = await self._http.get(
-            candidate.url,
-            timeout=20.0,
-            headers={
-                "Cookie": self._cookie,
-                "User-Agent": UA_SAFARI_MAC,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Upgrade-Insecure-Requests": "1",
-                "Referer": "https://www.wsj.com/",
-            },
-        )
-        resp.raise_for_status()
+        # WSJ uses Akamai/Datadome anti-bot which fingerprints the TLS handshake
+        # (JA3) — httpx/aiohttp/etc. all get 401'd even with a valid cookie +
+        # complete browser headers. curl_cffi wraps libcurl with browser-real
+        # TLS impl that matches Safari/Chrome JA3 hashes. impersonate="safari184"
+        # mimics Safari 18.4 (the most recent supported by curl_cffi).
+        async with AsyncSession(impersonate="safari184") as session:
+            resp = await session.get(
+                candidate.url,
+                headers={
+                    "Cookie": self._cookie,
+                    "Referer": "https://www.wsj.com/",
+                },
+                allow_redirects=True,
+                timeout=20,
+            )
+        if resp.status_code != 200:
+            raise WSJCookieExpiredError(
+                f"WSJ returned {resp.status_code} for {candidate.url}"
+            )
         html = resp.text
         if any(m in html for m in _PAYWALL_MARKERS) or len(html) < _MIN_HTML_LEN:
             raise WSJCookieExpiredError(f"paywall or short response for {candidate.url}")

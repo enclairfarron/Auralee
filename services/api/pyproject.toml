@@ -14,6 +14,11 @@ dependencies = [
     "google-cloud-storage>=2.18",
     "google-cloud-logging>=3.11",
     "httpx>=0.28",
+    # curl-cffi: libcurl-based HTTP client that mimics real browser TLS/JA3
+    # fingerprints. Used by WSJ scraper because httpx's default TLS handshake
+    # is fingerprinted as "bot" by Akamai/Datadome and gets 401'd even with
+    # valid logged-in cookie + complete browser headers.
+    "curl-cffi>=0.7",
     "trafilatura>=1.12",
     "feedparser>=6.0",
     "yfinance>=0.2.50",
