@@ -42,7 +42,11 @@ def get_secrets() -> SecretClient:
 @lru_cache(maxsize=1)
 def get_extractor() -> GeminiExtractor:
     s = get_settings()
-    return GeminiExtractor(api_key=s.gemini_api_key, model=s.extraction_model)
+    return GeminiExtractor(
+        model=s.extraction_model,
+        project=s.gcp_project,
+        location=s.gcp_region,
+    )
 
 
 def get_ingest_service(
@@ -61,4 +65,8 @@ def get_http_client() -> httpx.AsyncClient:
 @lru_cache(maxsize=1)
 def get_judge() -> GeminiJudge:
     s = get_settings()
-    return GeminiJudge(api_key=s.gemini_api_key, model=s.judge_model)
+    return GeminiJudge(
+        model=s.judge_model,
+        project=s.gcp_project,
+        location=s.gcp_region,
+    )

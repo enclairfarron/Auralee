@@ -41,12 +41,19 @@ class ExtractionResult:
 class GeminiExtractor:
     def __init__(
         self,
-        api_key: str,
         model: str = "gemini-2.5-flash",
+        project: str | None = None,
+        location: str = "us-east1",
         _client: Any | None = None,
     ) -> None:
         self._model = model
-        self._client = _client or genai.Client(api_key=api_key)
+        # Use Vertex AI route — billing flows through GCP project (no separate
+        # AI Studio prepayment), auth via ADC (runtime SA needs roles/aiplatform.user).
+        self._client = _client or genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+        )
 
     def extract(
         self,

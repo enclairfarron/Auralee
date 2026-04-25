@@ -38,12 +38,18 @@ class JudgeResult:
 class GeminiJudge:
     def __init__(
         self,
-        api_key: str,
         model: str = "gemini-2.5-pro",
+        project: str | None = None,
+        location: str = "us-east1",
         _client: Any | None = None,
     ) -> None:
         self._model = model
-        self._client = _client or genai.Client(api_key=api_key)
+        # Vertex AI route — see GeminiExtractor for rationale.
+        self._client = _client or genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+        )
 
     def judge(self, *, article_url: str, clean_text: str, extraction_json: str) -> JudgeResult:
         user_msg = build_judge_user_message(article_url, clean_text, extraction_json)

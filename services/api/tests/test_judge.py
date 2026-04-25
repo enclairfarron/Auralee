@@ -14,7 +14,7 @@ def test_judge_parses_response_into_pydantic_eval_score() -> None:
     fake_client = MagicMock()
     fake_client.models.generate_content.return_value = fake_response
 
-    judge = GeminiJudge(api_key="fake", model="gemini-2.5-pro", _client=fake_client)
+    judge = GeminiJudge(model="gemini-2.5-pro", _client=fake_client)
     result: JudgeResult = judge.judge(
         article_url="https://x",
         clean_text="Some text." * 400,

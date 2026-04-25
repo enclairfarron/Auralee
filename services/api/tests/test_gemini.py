@@ -24,7 +24,7 @@ def test_extract_parses_response_into_pydantic(fake_response_json: str) -> None:
     fake_client = MagicMock()
     fake_client.models.generate_content.return_value = fake_response
 
-    extractor = GeminiExtractor(api_key="fake", model="gemini-2.5-flash", _client=fake_client)
+    extractor = GeminiExtractor(model="gemini-2.5-flash", _client=fake_client)
     result: ExtractionResult = extractor.extract(
         source="wsj",
         url="https://x",
