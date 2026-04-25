@@ -69,14 +69,12 @@ class GeminiExtractor:
             published_at=published_at,
             clean_text=clean_text,
         )
-        # NOTE: response_schema=Extraction was REMOVED — google-genai 1.73 sends
-        # `additional_properties` in the protobuf Schema which Gemini API rejects with
-        # 400 INVALID_ARGUMENT. Workaround: use response_mime_type only and validate
-        # the JSON shape on receipt with Pydantic. Prompt is explicit enough that
-        # Gemini reliably returns matching shape.
+        # response_schema works on Vertex AI (uses different schema serialization
+        # than AI Studio path which rejects additional_properties).
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
+            response_schema=Extraction,
             temperature=0.1,
             max_output_tokens=2048,
             thinking_config=types.ThinkingConfig(thinking_budget=0),
