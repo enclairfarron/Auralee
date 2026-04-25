@@ -69,14 +69,24 @@ class WSJScraper(BaseScraper):
         return datetime(y, m, d, h, mi, s, tzinfo=UTC)
 
     async def fetch_one(self, candidate: Candidate) -> IngestPayload:
+        # Full browser-equivalent header set. Without Sec-Fetch-* + Accept-Encoding
+        # WSJ returns 401 even with a valid logged-in cookie. With these headers
+        # WSJ accepts the request and follows redirects from /articles/X to its
+        # new /category/sub/X URL structure (httpx follow_redirects handles it).
         resp = await self._http.get(
             candidate.url,
             timeout=20.0,
             headers={
                 "Cookie": self._cookie,
                 "User-Agent": UA_SAFARI_MAC,
-                "Accept": "text/html,application/xhtml+xml",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Upgrade-Insecure-Requests": "1",
                 "Referer": "https://www.wsj.com/",
             },
         )
