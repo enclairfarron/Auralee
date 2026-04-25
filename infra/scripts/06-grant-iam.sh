@@ -31,11 +31,29 @@ for role in roles/artifactregistry.writer \
   bind_project_role "${CLOUDBUILD_SA}" "${role}"
 done
 
-# Deployer SA
+# Deployer SA — needs builds.editor + run.developer + serviceUsageConsumer
+# (for `gcloud builds submit` API call) + logs.viewer (for build status polling)
 for role in roles/cloudbuild.builds.editor \
-            roles/run.developer ; do
+            roles/run.developer \
+            roles/serviceusage.serviceUsageConsumer \
+            roles/logging.viewer ; do
   bind_project_role "${DEPLOYER_SA}" "${role}"
 done
+
+# Deployer needs access to Cloud Build's auto-created staging bucket to
+# upload source tarball. The bucket is created on first build run by Cloud
+# Build itself (named ${PROJECT_ID}_cloudbuild). If the bucket doesn't exist
+# yet (first-ever build), this binding is skipped — re-run this script once
+# the bucket exists.
+STAGING_BUCKET="gs://${PROJECT_ID}_cloudbuild"
+if gsutil ls "${STAGING_BUCKET}" >/dev/null 2>&1; then
+  log "Granting deployer storage.objectAdmin on ${STAGING_BUCKET}"
+  gcloud storage buckets add-iam-policy-binding "${STAGING_BUCKET}" \
+    --member="serviceAccount:${DEPLOYER_SA}" --role=roles/storage.objectAdmin >/dev/null
+else
+  log "Cloud Build staging bucket ${STAGING_BUCKET} does not exist yet (first build will create it)."
+  log "Re-run this script after first successful local 'gcloud builds submit' to grant deployer access."
+fi
 
 # Deployer can act-as runtime + cloudbuild SAs
 log "Allow deployer to impersonate runtime and cloudbuild SAs"
