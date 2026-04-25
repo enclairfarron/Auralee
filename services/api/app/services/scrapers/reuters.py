@@ -10,9 +10,13 @@ from app.services.scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
+# NOTE: Reuters discontinued public RSS (feeds.reuters.com is dead as of 2025).
+# Replaced with MarketWatch — Dow Jones owned, financial focus, free RSS.
+# TODO(week2): rename "reuters" -> "marketwatch" throughout (Source enum,
+# scheduler job, etc.). Source label is misleading until then.
 FEEDS = [
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://feeds.reuters.com/reuters/marketsNews",
+    "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    "https://feeds.content.dowjones.io/public/rss/mw_marketpulse",
 ]
 
 
