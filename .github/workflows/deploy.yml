@@ -12,6 +12,11 @@ env:
   REGION: us-east1
   REPO: api
   SERVICE: auralee-api
+  # Force JS Actions to use Node 24 (default starting 2026-06-02). Silences
+  # the "Node 20 actions are deprecated" warning. Safe to remove once
+  # actions/checkout, google-github-actions/auth, etc. ship versions that
+  # bundle Node 24 by default.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   deploy:
