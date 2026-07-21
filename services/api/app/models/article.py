@@ -56,12 +56,21 @@ class Extraction(BaseModel):
     summary: str = Field(description="2-3 sentences in the SAME language as the article")
     tickers: list[str] = Field(
         default_factory=list,
-        description="US-listed tickers, uppercase, e.g. ['AAPL']",
+        max_length=12,
+        description="At most 12 US-listed tickers, uppercase, e.g. ['AAPL']",
     )
     sentiment: Sentiment
     core_thesis: str = Field(description="Article's central argument, 1 sentence")
-    categories: list[str] = Field(default_factory=list)
-    entities: list[Entity] = Field(default_factory=list)
+    categories: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="At most 8 distinct, salient categories",
+    )
+    entities: list[Entity] = Field(
+        default_factory=list,
+        max_length=20,
+        description="At most 20 distinct, salient named entities",
+    )
     language: str = Field(description="ISO 639-1 code")
 
 

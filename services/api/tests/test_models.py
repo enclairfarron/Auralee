@@ -39,6 +39,31 @@ def test_extraction_minimal() -> None:
     assert e.categories == []
 
 
+def test_extraction_collection_limits() -> None:
+    base = {
+        "title": "t",
+        "summary": "s",
+        "sentiment": Sentiment(score=0.0, label="neutral"),
+        "core_thesis": "c",
+        "language": "en",
+    }
+    entities = [Entity(type="person", name=f"Person {index}") for index in range(20)]
+
+    Extraction(**base, tickers=[f"T{index}" for index in range(12)])
+    Extraction(**base, categories=[f"c{index}" for index in range(8)])
+    Extraction(**base, entities=entities)
+
+    with pytest.raises(ValidationError):
+        Extraction(**base, tickers=[f"T{index}" for index in range(13)])
+    with pytest.raises(ValidationError):
+        Extraction(**base, categories=[f"c{index}" for index in range(9)])
+    with pytest.raises(ValidationError):
+        Extraction(
+            **base,
+            entities=[*entities, Entity(type="person", name="Overflow")],
+        )
+
+
 def test_entity_with_optional_ticker() -> None:
     Entity(type="company", name="Apple Inc.", ticker="AAPL")
     Entity(type="person", name="Tim Cook")  # no ticker
