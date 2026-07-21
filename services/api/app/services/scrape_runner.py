@@ -18,7 +18,13 @@ async def run_scrape(
     candidate_limit: int = 50,
     fetch_delay_seconds: float = 0.0,
 ) -> dict[str, Any]:
-    run = Run(id="", kind="scrape", source=scraper.source_name, started_at=datetime.now(UTC))
+    run = Run(
+        id="",
+        kind="scrape",
+        source=scraper.source_name,
+        started_at=datetime.now(UTC),
+        outcome_counts_complete=True,
+    )
 
     try:
         candidates = await scraper.list_candidates(limit=candidate_limit)
@@ -54,6 +60,8 @@ async def run_scrape(
                 run.cost_usd += response.meta.cost_usd
         elif response.status == "duplicate":
             run.articles_skipped_dup += 1
+        elif response.status == "skipped_short":
+            run.articles_skipped_short += 1
 
         if fetch_delay_seconds > 0:
             await asyncio.sleep(fetch_delay_seconds)
@@ -63,6 +71,8 @@ async def run_scrape(
         run.status = "partial"
     elif run.errors and run.articles_ingested == 0:
         run.status = "failure"
+    elif run.articles_attempted == 0:
+        run.status = "noop"
     else:
         run.status = "success"
 
@@ -78,6 +88,8 @@ def _summarize(run: Run) -> dict[str, Any]:
         "attempted": run.articles_attempted,
         "ingested": run.articles_ingested,
         "skipped_dup": run.articles_skipped_dup,
+        "skipped_short": run.articles_skipped_short,
+        "outcome_counts_complete": run.outcome_counts_complete,
         "errors": len(run.errors),
         "cost_usd": round(run.cost_usd, 6),
         "started_at": run.started_at.isoformat(),

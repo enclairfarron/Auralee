@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -9,7 +10,9 @@ from app.models.article import (
     SanityCheck,
     Sentiment,
 )
+from app.models.run import Run, RunError
 from app.services.metrics import aggregate_daily_metrics
+from app.services.metrics_runner import aggregate_yesterday_metrics
 
 
 def _article(
@@ -145,3 +148,97 @@ def test_aggregate_handles_empty_articles_safely() -> None:
     assert m["articles_total"] == 0
     assert m["m2_precision_pass_rate"] == 0.0
     assert m["m3_avg_score"] == 0.0
+    assert m["scrape_funnel"]["runs_total"] == 0
+
+
+def test_aggregate_uses_scrape_runs_for_error_and_funnel_metrics() -> None:
+    now = datetime(2026, 4, 24, 12, 0, tzinfo=UTC)
+    runs = [
+        Run(
+            id="success",
+            kind="scrape",
+            source="hn",
+            started_at=now,
+            status="success",
+            articles_attempted=5,
+            articles_ingested=2,
+            articles_skipped_dup=1,
+            articles_skipped_short=1,
+            outcome_counts_complete=True,
+            errors=[RunError(stage="fetch", message="timeout")],
+        ),
+        Run(
+            id="partial",
+            kind="scrape",
+            source="reuters",
+            started_at=now,
+            status="partial",
+            articles_attempted=2,
+            articles_skipped_dup=1,
+            outcome_counts_complete=True,
+            errors=[RunError(stage="ingest", message="Vertex error")],
+        ),
+        Run(
+            id="failure",
+            kind="scrape",
+            source="reuters",
+            started_at=now,
+            status="failure",
+            outcome_counts_complete=True,
+            errors=[RunError(stage="list_candidates", message="feeds unavailable")],
+        ),
+    ]
+
+    metrics = aggregate_daily_metrics([], date_str="2026-04-24", scrape_runs=runs)
+
+    assert metrics["ingest_errors_total"] == 1
+    assert metrics["pipeline_errors_total"] == 3
+    assert metrics["scrape_funnel"] == {
+        "runs_total": 3,
+        "runs_failed_total": 1,
+        "candidates_total": 7,
+        "ingested_total": 2,
+        "duplicates_total": 2,
+        "skipped_short_total": 1,
+        "fetch_errors_total": 1,
+        "ingest_errors_total": 1,
+        "list_errors_total": 1,
+        "pipeline_errors_total": 3,
+        "unclassified_total": 0,
+        "overclassified_total": 0,
+        "outcome_counts_complete": True,
+    }
+
+
+def test_aggregate_marks_legacy_scrape_outcomes_incomplete() -> None:
+    run = Run(
+        id="legacy",
+        kind="scrape",
+        source="hn",
+        started_at=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
+        articles_attempted=1,
+        articles_ingested=1,
+    )
+
+    metrics = aggregate_daily_metrics([], date_str="2026-04-24", scrape_runs=[run])
+
+    assert metrics["scrape_funnel"]["outcome_counts_complete"] is False
+
+
+@pytest.mark.asyncio
+async def test_metrics_runner_reads_scrape_runs_for_same_utc_window() -> None:
+    repo = MagicMock()
+    repo.list_articles_in_range.side_effect = [[], []]
+    repo.list_runs_in_range.return_value = []
+    repo.list_all_tickers.return_value = []
+
+    result = await aggregate_yesterday_metrics(repo)
+
+    run_call = repo.list_runs_in_range.call_args
+    assert run_call.kwargs["kind"] == "scrape"
+    assert run_call.kwargs["start"].tzinfo is UTC
+    assert run_call.kwargs["end"].tzinfo is UTC
+    assert run_call.kwargs["end"] > run_call.kwargs["start"]
+    saved_metrics = repo.save_metrics.call_args.args[1]
+    assert saved_metrics["scrape_funnel"]["runs_total"] == 0
+    assert result["metrics"] == saved_metrics

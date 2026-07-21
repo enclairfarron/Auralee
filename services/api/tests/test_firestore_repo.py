@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, call
 
 from app.models.article import (
     Article,
@@ -116,3 +117,30 @@ def test_upsert_ticker_stub_creates_when_missing() -> None:
     assert "prices/AAPL" in client.store
     assert client.store["prices/AAPL"]["ticker"] == "AAPL"
     assert client.store["prices/AAPL"]["is_active"] is True
+
+
+def test_list_runs_in_range_uses_kind_and_half_open_utc_window() -> None:
+    start = datetime(2026, 4, 24, tzinfo=UTC)
+    end = datetime(2026, 4, 25, tzinfo=UTC)
+    stored = Run(
+        id="run-1",
+        kind="scrape",
+        source="hn",
+        started_at=start,
+    ).model_dump(mode="json")
+    doc = MagicMock()
+    doc.to_dict.return_value = stored
+    query = MagicMock()
+    query.where.return_value = query
+    query.stream.return_value = [doc]
+    client = MagicMock()
+    client.collection.return_value = query
+
+    runs = FirestoreRepo(_client=client).list_runs_in_range(start, end, kind="scrape")
+
+    assert [run.id for run in runs] == ["run-1"]
+    assert query.where.call_args_list == [
+        call("kind", "==", "scrape"),
+        call("started_at", ">=", start.isoformat()),
+        call("started_at", "<", end.isoformat()),
+    ]

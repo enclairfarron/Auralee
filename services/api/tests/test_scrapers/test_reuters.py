@@ -63,3 +63,53 @@ async def test_list_candidates_captures_description_from_rss(httpx_mock: HTTPXMo
 
     # The fixture has <description> on each <item>; assert it's captured.
     assert all(c.description is not None for c in candidates)
+
+
+@pytest.mark.asyncio
+async def test_list_candidates_applies_limit_across_all_feeds(httpx_mock: HTTPXMock) -> None:
+    feed = files("tests.data").joinpath("reuters_feed.xml").read_text()
+    for url in FEEDS:
+        httpx_mock.add_response(url=url, text=feed)
+
+    async with httpx.AsyncClient() as client:
+        candidates = await ReutersScraper(http=client).list_candidates(limit=1)
+
+    assert len(candidates) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_candidates_fails_when_every_feed_is_unavailable(
+    httpx_mock: HTTPXMock,
+) -> None:
+    for url in FEEDS:
+        httpx_mock.add_response(url=url, status_code=503)
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(RuntimeError, match="all MarketWatch feeds failed"):
+            await ReutersScraper(http=client).list_candidates(limit=10)
+
+
+@pytest.mark.asyncio
+async def test_list_candidates_fails_when_every_feed_is_malformed(
+    httpx_mock: HTTPXMock,
+) -> None:
+    for url in FEEDS:
+        httpx_mock.add_response(url=url, text="not an RSS document")
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(RuntimeError, match="all MarketWatch feeds failed"):
+            await ReutersScraper(http=client).list_candidates(limit=10)
+
+
+@pytest.mark.asyncio
+async def test_list_candidates_keeps_working_when_one_feed_fails(
+    httpx_mock: HTTPXMock,
+) -> None:
+    feed = files("tests.data").joinpath("reuters_feed.xml").read_text()
+    httpx_mock.add_response(url=FEEDS[0], status_code=503)
+    httpx_mock.add_response(url=FEEDS[1], text=feed)
+
+    async with httpx.AsyncClient() as client:
+        candidates = await ReutersScraper(http=client).list_candidates(limit=10)
+
+    assert len(candidates) == 2

@@ -17,7 +17,12 @@ async def aggregate_yesterday_metrics(repo: FirestoreRepo) -> dict[str, Any]:
     end = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
 
     articles = repo.list_articles_in_range(start=start, end=end)
-    metrics = aggregate_daily_metrics(articles, date_str=yesterday.strftime("%Y-%m-%d"))
+    scrape_runs = repo.list_runs_in_range(start=start, end=end, kind="scrape")
+    metrics = aggregate_daily_metrics(
+        articles,
+        date_str=yesterday.strftime("%Y-%m-%d"),
+        scrape_runs=scrape_runs,
+    )
     repo.save_metrics(yesterday.strftime("%Y%m%d"), metrics)
 
     # Update is_active for tickers (30-day window)

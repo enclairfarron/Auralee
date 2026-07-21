@@ -98,6 +98,37 @@ async def test_run_scrape_records_errors_and_continues() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_scrape_records_candidate_listing_failure() -> None:
+    scraper = MagicMock()
+    scraper.source_name = "reuters"
+    scraper.list_candidates = AsyncMock(side_effect=RuntimeError("all feeds failed"))
+    repo = MagicMock()
+
+    summary = await run_scrape(scraper=scraper, ingest=MagicMock(), repo=repo)
+
+    assert summary["status"] == "failure"
+    assert summary["attempted"] == 0
+    assert summary["errors"] == 1
+    saved_run = repo.save_run.call_args.args[0]
+    assert saved_run.errors[0].stage == "list_candidates"
+    assert saved_run.outcome_counts_complete is True
+
+
+@pytest.mark.asyncio
+async def test_run_scrape_marks_valid_empty_candidate_set_as_noop() -> None:
+    scraper = MagicMock()
+    scraper.source_name = "reuters"
+    scraper.list_candidates = AsyncMock(return_value=[])
+    repo = MagicMock()
+
+    summary = await run_scrape(scraper=scraper, ingest=MagicMock(), repo=repo)
+
+    assert summary["status"] == "noop"
+    assert summary["attempted"] == 0
+    assert summary["errors"] == 0
+
+
+@pytest.mark.asyncio
 async def test_run_scrape_skips_when_already_ingested() -> None:
     scraper = MagicMock()
     scraper.source_name = "hn"
@@ -109,4 +140,29 @@ async def test_run_scrape_skips_when_already_ingested() -> None:
 
     summary = await run_scrape(scraper=scraper, ingest=ingest, repo=repo)
     assert summary["skipped_dup"] == 1
+    assert summary["skipped_short"] == 0
     assert summary["ingested"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_scrape_counts_short_content_separately() -> None:
+    scraper = MagicMock()
+    scraper.source_name = "reuters"
+    scraper.list_candidates = AsyncMock(return_value=[_candidate(1)])
+    scraper.fetch_one = AsyncMock()
+    ingest = MagicMock()
+    ingest.process = MagicMock(
+        return_value=IngestResponse(article_id="reuters_1", status="skipped_short")
+    )
+    repo = MagicMock()
+
+    summary = await run_scrape(scraper=scraper, ingest=ingest, repo=repo)
+
+    assert summary["attempted"] == 1
+    assert summary["skipped_short"] == 1
+    assert summary["skipped_dup"] == 0
+    assert summary["ingested"] == 0
+    assert summary["outcome_counts_complete"] is True
+    saved_run = repo.save_run.call_args.args[0]
+    assert saved_run.articles_skipped_short == 1
+    assert saved_run.outcome_counts_complete is True

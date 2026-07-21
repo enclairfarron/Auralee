@@ -2,6 +2,7 @@ from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 
 from app.deps import (
     get_http_client,
@@ -38,7 +39,7 @@ async def cron_scrape(
     secrets: Annotated[SecretClient, Depends(get_secrets)],
     ingest: Annotated[IngestService, Depends(get_ingest_service)],
     repo: Annotated[FirestoreRepo, Depends(get_repo)],
-) -> dict[str, Any]:
+) -> Any:
     scraper: BaseScraper
     if source == "hn":
         scraper = HNScraper(http=http)
@@ -50,13 +51,18 @@ async def cron_scrape(
         scraper = WSJScraper(http=http, cookie=secrets.get("WSJ_COOKIE"))
         delay = 2.0
 
-    return await run_scrape(
+    result = await run_scrape(
         scraper=scraper,
         ingest=ingest,
         repo=repo,
         candidate_limit=30 if source == "hn" else 50,
         fetch_delay_seconds=delay,
     )
+    # Cloud Scheduler treats any 2xx response as a successful delivery. Surface
+    # a total source failure as 503 so retry/alerting semantics match the saved run.
+    if result["status"] == "failure":
+        return JSONResponse(status_code=503, content=result)
+    return result
 
 
 @router.post("/refresh-prices")

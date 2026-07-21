@@ -25,14 +25,19 @@ class ReutersScraper(BaseScraper):
 
     async def list_candidates(self, limit: int = 50) -> list[Candidate]:
         seen: dict[str, Candidate] = {}
+        successful_feeds = 0
         for feed_url in FEEDS:
             try:
                 resp = await self._http.get(feed_url, timeout=15.0)
                 resp.raise_for_status()
-            except Exception:  # feed fetches must not break the cron run; log and continue
-                logger.warning("Reuters feed fetch failed", extra={"feed": feed_url})
+            except Exception:  # one failed feed must not break a partially healthy run
+                logger.warning("MarketWatch feed fetch failed", extra={"feed": feed_url})
                 continue
             parsed = feedparser.parse(resp.text)
+            if parsed.bozo and not parsed.entries:
+                logger.warning("MarketWatch feed parse failed", extra={"feed": feed_url})
+                continue
+            successful_feeds += 1
             for entry in parsed.entries[:limit]:
                 url = entry.link
                 if url in seen:
@@ -45,7 +50,10 @@ class ReutersScraper(BaseScraper):
                     published_at=published,
                     description=_clean_html(entry.get("summary") or entry.get("description") or ""),
                 )
-        return list(seen.values())
+        if successful_feeds == 0:
+            raise RuntimeError("all MarketWatch feeds failed")
+        # ``limit`` is the scraper-wide contract, not a per-feed allowance.
+        return list(seen.values())[:limit]
 
     @staticmethod
     def _parse_pubdate(entry: dict) -> datetime | None:  # type: ignore[type-arg]

@@ -134,6 +134,20 @@ class FirestoreRepo:
             query = query.where("source", "==", source)
         return [Run.model_validate(d.to_dict()) for d in query.stream()]
 
+    def list_runs_in_range(
+        self,
+        start: datetime,
+        end: datetime,
+        kind: str | None = None,
+    ) -> list[Run]:
+        query = self._client.collection("runs")
+        if kind:
+            query = query.where("kind", "==", kind)
+        query = query.where("started_at", ">=", start.isoformat()).where(
+            "started_at", "<", end.isoformat()
+        )
+        return [Run.model_validate(d.to_dict()) for d in query.stream()]
+
     def get_run(self, run_id: str) -> Run | None:
         doc = cast(DocumentSnapshot, self._client.collection("runs").document(run_id).get())
         return Run.model_validate(doc.to_dict()) if doc.exists else None

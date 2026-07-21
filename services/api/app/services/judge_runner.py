@@ -1,8 +1,14 @@
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.models.run import Run, RunError
+from app.services.archive_reader import (
+    ArchivedContentReader,
+    ArchiveReadError,
+    GCSArchivedContentReader,
+)
 from app.services.firestore_repo import FirestoreRepo
 from app.services.judge import GeminiJudge
 
@@ -17,6 +23,7 @@ async def run_eval_judge(
     judge: GeminiJudge,
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     limit: int = DEFAULT_BATCH_SIZE,
+    archive_reader: ArchivedContentReader | None = None,
 ) -> dict[str, Any]:
     run = Run(id="", kind="eval-judge", started_at=datetime.now(UTC))
     after = datetime.now(UTC) - timedelta(hours=lookback_hours)
@@ -24,16 +31,51 @@ async def run_eval_judge(
     run.articles_attempted = len(articles)
 
     for article in articles:
-        # We store `clean_text_chars` only; reuse summary + core_thesis + title as judgeable surface.
-        # If you want full-fidelity judging, fetch raw HTML from GCS here — deferred for now.
-        proxy_text = (
-            f"TITLE: {article.title}\n\n"
-            f"SUMMARY: {article.summary}\n\n"
-            f"CORE_THESIS: {article.core_thesis}"
-        )
+        archive_uri = article.raw_content_gcs_uri or article.raw_html_gcs_uri
+        if not archive_uri:
+            run.errors.append(
+                RunError(
+                    url=article.url,
+                    stage="archive-read",
+                    message="article has no raw content archive URI",
+                )
+            )
+            continue
+
+        try:
+            # Construct the production reader only if this batch actually needs it;
+            # callers can inject a deterministic reader for tests.
+            if archive_reader is None:
+                archive_reader = GCSArchivedContentReader()
+            clean_text = archive_reader.read_clean_text(archive_uri)
+        except ArchiveReadError as e:
+            run.errors.append(
+                RunError(
+                    url=article.url,
+                    stage="archive-read",
+                    message=str(e)[:200],
+                )
+            )
+            continue
+        except Exception as e:
+            run.errors.append(
+                RunError(
+                    url=article.url,
+                    stage="archive-read",
+                    message=(f"archive reader failed for {archive_uri}: {type(e).__name__}: {e}")[
+                        :200
+                    ],
+                )
+            )
+            continue
+
         extraction_snapshot = {
+            "title": article.title,
+            "summary": article.summary,
             "tickers": article.tickers,
             "sentiment": article.sentiment.model_dump(),
+            "core_thesis": article.core_thesis,
+            "categories": article.categories,
             "entities": [e.model_dump() for e in article.entities],
             "language": article.language,
         }
@@ -41,8 +83,8 @@ async def run_eval_judge(
         try:
             result = judge.judge(
                 article_url=article.url,
-                clean_text=proxy_text,
-                extraction_json=str(extraction_snapshot),
+                clean_text=clean_text,
+                extraction_json=json.dumps(extraction_snapshot, ensure_ascii=False),
             )
         except Exception as e:
             run.errors.append(RunError(url=article.url, stage="judge", message=str(e)[:200]))
