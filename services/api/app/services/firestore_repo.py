@@ -146,6 +146,8 @@ class FirestoreRepo:
         query = query.where("started_at", ">=", start.isoformat()).where(
             "started_at", "<", end.isoformat()
         )
+        # Match the committed ``runs(kind, started_at DESC)`` composite index.
+        query = query.order_by("started_at", direction=firestore.Query.DESCENDING)
         return [Run.model_validate(d.to_dict()) for d in query.stream()]
 
     def get_run(self, run_id: str) -> Run | None:

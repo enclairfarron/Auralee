@@ -132,6 +132,7 @@ def test_list_runs_in_range_uses_kind_and_half_open_utc_window() -> None:
     doc.to_dict.return_value = stored
     query = MagicMock()
     query.where.return_value = query
+    query.order_by.return_value = query
     query.stream.return_value = [doc]
     client = MagicMock()
     client.collection.return_value = query
@@ -144,3 +145,4 @@ def test_list_runs_in_range_uses_kind_and_half_open_utc_window() -> None:
         call("started_at", ">=", start.isoformat()),
         call("started_at", "<", end.isoformat()),
     ]
+    query.order_by.assert_called_once_with("started_at", direction="DESCENDING")
