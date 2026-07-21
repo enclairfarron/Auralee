@@ -242,3 +242,55 @@ async def test_metrics_runner_reads_scrape_runs_for_same_utc_window() -> None:
     saved_metrics = repo.save_metrics.call_args.args[1]
     assert saved_metrics["scrape_funnel"]["runs_total"] == 0
     assert result["metrics"] == saved_metrics
+
+
+@pytest.mark.asyncio
+async def test_metrics_runner_excludes_non_p1_articles_and_runs() -> None:
+    repo = MagicMock()
+    hn_article = _article(
+        article_id="hn",
+        source="hn",
+        tickers=[],
+        sentiment_label="neutral",
+        sanity_pass=True,
+        judge_score=8.0,
+        cost=0.001,
+    )
+    wsj_article = _article(
+        article_id="wsj",
+        source="wsj",
+        tickers=[],
+        sentiment_label="neutral",
+        sanity_pass=True,
+        judge_score=8.0,
+        cost=0.001,
+    )
+    now = datetime.now(UTC)
+    repo.list_articles_in_range.side_effect = [[hn_article, wsj_article], []]
+    repo.list_runs_in_range.return_value = [
+        Run(
+            id="hn-run",
+            kind="scrape",
+            source="hn",
+            started_at=now,
+            outcome_counts_complete=True,
+        ),
+        Run(
+            id="wsj-run",
+            kind="scrape",
+            source="wsj",
+            started_at=now,
+            status="failure",
+            outcome_counts_complete=True,
+            errors=[RunError(stage="fetch", message="blocked")],
+        ),
+    ]
+    repo.list_all_tickers.return_value = []
+
+    result = await aggregate_yesterday_metrics(repo)
+
+    metrics = result["metrics"]
+    assert metrics["articles_total"] == 1
+    assert metrics["by_source"] == {"hn": 1}
+    assert metrics["scrape_funnel"]["runs_total"] == 1
+    assert metrics["pipeline_errors_total"] == 0

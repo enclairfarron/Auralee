@@ -48,6 +48,15 @@ upsert_job() {
       --attempt-deadline=600s \
       --format=none
   fi
+
+  local state
+  state=$(gcloud scheduler jobs describe "${name}" \
+    --location="${REGION}" --format='value(state)')
+  if [[ "${state}" == "PAUSED" ]]; then
+    log "Resuming scheduler job ${name}"
+    gcloud scheduler jobs resume "${name}" \
+      --location="${REGION}" --format=none
+  fi
 }
 
 pause_job_if_present() {
@@ -66,6 +75,6 @@ upsert_job aggregate-metrics-daily "55 23 * * *" "${SERVICE_URL}/cron/aggregate-
 upsert_job eval-judge-every-2h     "30 */2 * * *" "${SERVICE_URL}/cron/eval-judge"
 pause_job_if_present eval-judge-daily
 
-log "Done. 5 scheduler jobs active; legacy WSJ and daily judge jobs are paused."
+log "Done. 5 scheduler jobs configured and enabled; legacy WSJ and daily judge jobs are paused."
 log "NOTE: ADMIN_TOKEN is fetched from Secret Manager at job-create time."
 log "If you rotate ADMIN_TOKEN, re-run this script to refresh scheduler configs."

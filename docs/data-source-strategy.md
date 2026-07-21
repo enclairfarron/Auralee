@@ -2,6 +2,11 @@
 
 **Reviewed:** 2026-07-21
 
+**Implementation status:** the code-owned source registry and a strict, offline-tested SEC
+`submissions` parser are in place. SEC has no network client, route, Scheduler job, or storage
+write yet; it remains disabled until the physical `shadow_articles` / `shadow_runs` boundary and
+an identifying `SEC_USER_AGENT` are implemented and smoke-tested.
+
 Auralee should prefer sources that are programmatic, attributable, and stable over sources that
 require generic article scraping. Every adapter should declare whether it provides full text,
 summary text, or discovery metadata only, and retention must follow the source's license.

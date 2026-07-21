@@ -1,0 +1,38 @@
+{
+  "cik": "320193",
+  "name": "Apple Inc.",
+  "tickers": ["AAPL"],
+  "exchanges": ["Nasdaq"],
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0000320193-26-000081",
+        "0000320193-26-000082",
+        "0000320193-26-000065",
+        "0000320193-26-000040"
+      ],
+      "filingDate": ["2026-07-20", "2026-07-21", "2026-05-01", "2026-03-10"],
+      "reportDate": ["2026-07-20", "2026-07-20", "2026-03-28", "2025-12-27"],
+      "acceptanceDateTime": [
+        "2026-07-20T20:30:45.000Z",
+        "2026-07-21T12:00:00.000Z",
+        "",
+        "2026-03-10T16:10:00.000Z"
+      ],
+      "form": ["8-K", "8-K/A", "10-Q", "10-K"],
+      "primaryDocument": [
+        "aapl-20260720.htm",
+        "aapl-20260720x8ka.htm",
+        "aapl-20260328.htm",
+        "aapl-20251227.htm"
+      ],
+      "primaryDocDescription": [
+        "Current report",
+        "Amendment to current report",
+        "Quarterly report",
+        "Annual report"
+      ]
+    },
+    "files": []
+  }
+}
