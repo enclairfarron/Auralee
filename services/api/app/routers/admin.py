@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from google.cloud import storage as gcs_storage  # type: ignore[attr-defined]
+from pydantic import ValidationError
 
 from app.deps import (
     get_archiver,
@@ -12,7 +13,7 @@ from app.deps import (
     require_admin_token,
 )
 from app.models.article import Article
-from app.models.ingest import IngestPayload, IngestResponse, RawHtml
+from app.models.ingest import IngestPayload, IngestResponse, RawHtml, RawText
 from app.services.firestore_repo import FirestoreRepo
 from app.services.gcs import RawHtmlArchiver
 from app.services.gemini import GeminiExtractor
@@ -103,11 +104,13 @@ async def get_stats_summary(
 async def healthz_detail(
     repo: Annotated[FirestoreRepo, Depends(get_repo)],
     secrets: Annotated[SecretClient, Depends(get_secrets)],
+    extractor: Annotated[GeminiExtractor, Depends(get_extractor)],
 ) -> dict[str, bool | str]:
     out: dict[str, bool | str] = {
         "firestore": False,
         "secrets_wsj_cookie": False,
-        "secrets_gemini_key": False,
+        "vertex_ai": False,
+        "vertex_model": extractor.model,
     }
     try:
         repo.list_all_tickers()
@@ -120,10 +123,10 @@ async def healthz_detail(
     except Exception as e:
         out["secrets_wsj_cookie_error"] = str(e)[:200]
     try:
-        v = secrets.get("GEMINI_API_KEY")
-        out["secrets_gemini_key"] = bool(v)
+        extractor.check_health()
+        out["vertex_ai"] = True
     except Exception as e:
-        out["secrets_gemini_key_error"] = str(e)[:200]
+        out["vertex_ai_error"] = str(e)[:200]
     return out
 
 
@@ -137,25 +140,37 @@ async def reingest_article(
     article = repo.get_article(article_id)
     if not article:
         raise HTTPException(404, detail="article not found")
-    if not article.raw_html_gcs_uri:
-        raise HTTPException(409, detail="article has no archived HTML to re-extract from")
+    raw_content_gcs_uri = article.raw_content_gcs_uri or article.raw_html_gcs_uri
+    if not raw_content_gcs_uri:
+        raise HTTPException(409, detail="article has no archived content to re-extract from")
 
-    # Read raw HTML from GCS (use a fresh storage client; small infra)
-    bucket_name, _, blob_path = article.raw_html_gcs_uri.removeprefix("gs://").partition("/")
-    html = gcs_storage.Client().bucket(bucket_name).blob(blob_path).download_as_text()
-
-    # Delete existing doc so process() doesn't bail on duplicate.
-    # Firestore wrapper does not expose delete; do it here intentionally.
-    repo._client.collection("articles").document(
-        article_id
-    ).delete()  # intentional: no public delete API
+    # Read the first-seen raw content from GCS (use a fresh client; small infra).
+    bucket_name, _, blob_path = raw_content_gcs_uri.removeprefix("gs://").partition("/")
+    archived_content = gcs_storage.Client().bucket(bucket_name).blob(blob_path).download_as_text()
+    raw: RawHtml | RawText
+    if blob_path.endswith(".json"):
+        try:
+            raw = RawText.model_validate_json(archived_content)
+        except ValidationError as exc:
+            raise HTTPException(409, detail="archived text content is invalid") from exc
+    else:
+        # Legacy and current HTML archives both use the .html suffix.
+        raw = RawHtml(kind="html", html=archived_content)
 
     payload = IngestPayload(
         source=article.source,
         source_id=article.source_id,
         url=article.url,
+        published_at=article.published_at,
         fetched_at=article.fetched_at,
-        raw=RawHtml(kind="html", html=html),
+        raw=raw,
     )
     svc = IngestService(repo=repo, extractor=extractor, archiver=archiver)
-    return svc.process(payload)
+    # Keep the existing Firestore document until extraction succeeds. process()
+    # then overwrites the same deterministic ID, so a Vertex/cleaning failure is non-destructive.
+    return svc.process(
+        payload,
+        allow_existing=True,
+        existing_article_id=article_id,
+        existing_archive_uri=raw_content_gcs_uri,
+    )

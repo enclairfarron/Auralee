@@ -70,6 +70,8 @@ def test_article_full_doc() -> None:
             prompt_version="v1",
         ),
     )
+    assert a.raw_content_gcs_uri == "gs://bucket/x.html"
+    assert a.raw_html_gcs_uri == "gs://bucket/x.html"
     assert a.embedding is None  # Week 2 reserved
     assert a.sanity_check is None  # set later in pipeline
     assert a.eval_score is None
@@ -160,14 +162,17 @@ def test_run_with_errors() -> None:
 
 
 def test_ingest_payload_html_variant() -> None:
+    published_at = datetime(2026, 4, 23, 23, 55, tzinfo=UTC)
     p = IngestPayload(
         source="wsj",
         source_id="x",
         url="https://x",
+        published_at=published_at,
         fetched_at=datetime.now(UTC),
         raw=RawHtml(kind="html", html="<html></html>", encoding="utf-8"),
     )
     assert p.raw.kind == "html"
+    assert p.published_at == published_at
 
 
 def test_ingest_payload_text_variant() -> None:
@@ -179,6 +184,7 @@ def test_ingest_payload_text_variant() -> None:
         raw=RawText(kind="text", title="t", body="b", metadata={}),
     )
     assert p.raw.kind == "text"
+    assert p.published_at is None
 
 
 def test_candidate_minimal() -> None:

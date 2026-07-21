@@ -1,5 +1,9 @@
 # Auralee Phase 1 Design — Data Pipeline Viability PoC
 
+> **Historical design record.** The current source boundary, scheduler policy, evaluation gates,
+> and next milestones are maintained in [`docs/roadmap.md`](../../roadmap.md). Where this April
+> design conflicts with that roadmap or the checked-in scripts, the current roadmap/scripts win.
+
 **Status:** Draft v1 · **Date:** 2026-04-24 · **Owner:** enclairfarron
 
 ---
@@ -109,8 +113,8 @@ At end of day 7, the following seven metrics must be computed from the evaluatio
                     └────┬──────────┬─────────┬────────────┘
                          │          │         │
                          ▼          ▼         ▼
-                    Firestore   Secret Mgr   Gemini API
-                    + GCS raw   (3 secrets)  (Flash + Pro)
+                    Firestore   Secret Mgr   Vertex AI
+                    + GCS raw   (2 secrets)  (Flash + Pro)
 ```
 
 ### 4.1 Cloud Run Configuration
@@ -432,7 +436,7 @@ X-Admin-Token: <token-from-secret-manager>
 **Status codes:**
 - `200` success or idempotent duplicate (check `status` field)
 - `422` validation error
-- `502` Gemini API failed after one retry
+- `502` Vertex AI Gemini request failed after one retry
 - `504` Gemini call exceeded 30s
 
 ### 6.2 Internal Pipeline
@@ -843,14 +847,14 @@ gcloud run deploy auralee-api \
   --timeout 600 \
   --execution-environment gen2 \
   --set-env-vars "GCP_PROJECT=auralee-api-server,GCP_REGION=us-east1,LOG_LEVEL=INFO,PROMPT_VERSION=v1" \
-  --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
+  --set-secrets "WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
 ```
 
 ### 8.5 Service Accounts (four, least-privilege)
 
 | SA | Purpose | Roles |
 |---|---|---|
-| `auralee-runtime` | Cloud Run runtime identity | `datastore.user` · `secretmanager.secretAccessor` · `storage.objectAdmin` (raw bucket) · `logging.logWriter` |
+| `auralee-runtime` | Cloud Run runtime identity | `datastore.user` · `secretmanager.secretAccessor` · `aiplatform.user` · `storage.objectAdmin` (raw bucket) · `logging.logWriter` |
 | `auralee-scheduler` | Cloud Scheduler → Cloud Run invoker | `run.invoker` on `auralee-api` only |
 | `auralee-deployer` | GitHub Actions deployment | `cloudbuild.builds.editor` · `run.developer` · `iam.serviceAccountUser` on `auralee-runtime` and `auralee-cloudbuild` |
 | `auralee-cloudbuild` | Cloud Build worker identity | `artifactregistry.writer` · `logging.logWriter` · `storage.objectUser` (staging) |
@@ -862,11 +866,11 @@ gcloud run deploy auralee-api \
 
 ### 8.6 Secret Manager
 
-Three secrets. Cloud Run mounts them as env vars via `--set-secrets`.
+Two secrets. Cloud Run mounts them as env vars via `--set-secrets`. Gemini uses
+Vertex AI with runtime service-account ADC, so it does not require an API-key secret.
 
 | Secret | Content | Source | Refresh |
 |---|---|---|---|
-| `GEMINI_API_KEY` | Gemini API key | aistudio.google.com | Only if rotated |
 | `WSJ_COOKIE` | Full WSJ session cookie string | User's browser export | Every 1-2 weeks when paywall re-triggers |
 | `ADMIN_TOKEN` | 64-char random | `openssl rand -hex 32` | Never (until compromise) |
 
@@ -924,23 +928,23 @@ jobs:
             --min-instances 0 --max-instances 3 \
             --concurrency 10 --timeout 600 --execution-environment gen2 \
             --set-env-vars "GCP_PROJECT=${PROJECT_ID},GCP_REGION=${REGION},LOG_LEVEL=INFO,PROMPT_VERSION=v1" \
-            --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
+            --set-secrets "WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
 ```
 
 ### 8.8 One-Time Setup Order
 
 ```
 [Manual]  1. Create GCP project `auralee-api-server` in Console, enable billing
-[Script]  2. ./00-bootstrap.sh           — Enable 9 APIs
+[Script]  2. ./00-bootstrap.sh           — Enable 10 APIs
 [Script]  3. ./01-create-service-accounts.sh  — 4 SAs
-[Script]  4. ./02-create-secrets.sh      — 3 empty secrets
+[Script]  4. ./02-create-secrets.sh      — 2 empty secrets
 [Script]  5. ./03-create-buckets.sh      — GCS raw bucket
 [Script]  6. ./04-create-firestore.sh    — Native mode in us-east1
 [Script]  7. ./05-create-artifact-registry.sh
 [Script]  8. ./06-grant-iam.sh           — All bindings
 [Script]  9. ./07-setup-wif.sh           — Outputs GCP_PROJECT_NUMBER
 [Manual] 10. GitHub repo → Settings → Secrets: add GCP_PROJECT_NUMBER
-[Manual] 11. Populate Secret Manager values (GEMINI_API_KEY, WSJ_COOKIE, ADMIN_TOKEN)
+[Manual] 11. Populate Secret Manager values (WSJ_COOKIE, ADMIN_TOKEN)
 [Git]    12. git push origin main → GitHub Actions auto-deploys
 [Script] 13. ./08-create-scheduler-jobs.sh  — 6 cron jobs (after first deploy)
 ```
@@ -951,7 +955,7 @@ jobs:
 run.googleapis.com                     artifactregistry.googleapis.com
 firestore.googleapis.com               secretmanager.googleapis.com
 cloudscheduler.googleapis.com          storage.googleapis.com
-logging.googleapis.com                 generativelanguage.googleapis.com
+logging.googleapis.com                 aiplatform.googleapis.com
 cloudbuild.googleapis.com              iamcredentials.googleapis.com
 ```
 
@@ -968,7 +972,7 @@ Assuming ~3000 ingested articles/month, ~30 active tickers, 6 cron jobs:
 | Cloud Run | $5 – $15 | vCPU-seconds from cron runtime |
 | Firestore | $0 | Within 20K writes/day free tier |
 | Cloud Scheduler | $0.30 | 6 jobs, first 3 free |
-| Secret Manager | $0 | 3 secrets in free tier |
+| Secret Manager | $0 | 2 secrets in free tier |
 | GCS (raw archive) | < $0.01 | ~150MB/month |
 | Artifact Registry | $0.10 | ~1GB including cache layers |
 | Gemini Flash (ingest) | $1.50 | ~3000 articles × $0.0005 |
@@ -1055,7 +1059,7 @@ GET  /admin/runs?kind=scrape&source=X     # Run history
 GET  /admin/runs/{run_id}                 # Single run detail
 
 GET  /admin/healthz                       # Liveness
-GET  /admin/healthz-detail                # Firestore + GCS + Gemini reachability + WSJ cookie validity
+GET  /admin/healthz-detail                # Firestore + Vertex model reachability + WSJ cookie validity
 
 POST /admin/reingest/{article_id}         # Re-extract using current prompt version (A/B)
 ```
@@ -1094,7 +1098,7 @@ Before beginning implementation, verify:
 - [ ] GCP project `auralee-api-server` exists, billing enabled
 - [ ] `gcloud` CLI installed and authenticated locally
 - [ ] User has current WSJ US account and can export cookies from browser
-- [ ] Gemini API key obtained from aistudio.google.com
+- [ ] Vertex AI API enabled and runtime SA granted `roles/aiplatform.user`
 - [ ] GitHub repo `enclairfarron/Auralee` cloned locally
 - [ ] `uv` installed (≥0.5)
 - [ ] Docker Desktop installed (for local build testing)
@@ -1130,7 +1134,7 @@ Deployed and observed. Summary of deviations from the original spec:
    prepayment credits in some accounts (returns 429 RESOURCE_EXHAUSTED).
    Switched all Gemini calls to Vertex AI (`genai.Client(vertexai=True, ...)`)
    so billing flows through the GCP project. Runtime SA needs
-   `roles/aiplatform.user`. No GEMINI_API_KEY secret needed.
+   `roles/aiplatform.user`. No separate Gemini API-key secret is used.
 2. **Reuters RSS** is dead (`feeds.reuters.com` offline as of 2025).
    Replaced with MarketWatch RSS (Dow Jones owned). Source enum still
    labels these "reuters" — TODO Week 2 rename to "marketwatch".
@@ -1175,10 +1179,10 @@ Deployed and observed. Summary of deviations from the original spec:
    job names still reference Reuters. Cosmetic but misleading.
 4. **`tickers.json` only 30 entries** — limits M2 precision check accuracy
    for non-mega-cap names. SEC EDGAR has full list, deferred.
-5. **Cloud Run probe `/healthz` returns 404 from external curl** when
-   tested through some local proxies (Clash on 7890). The route IS
-   registered (visible in OpenAPI) and works fine via direct call /
-   Cloud Run's internal probe. Cosmetic, low priority.
+5. **Cloud Run reserves/intercepts the exact `/healthz` path** on the
+   deployed service even though FastAPI registers it. The canonical
+   external liveness route is now `/health`; `/healthz` remains a local
+   compatibility alias.
 
 ### Day-7 expected outcome (with current source mix)
 

@@ -1,4 +1,3 @@
-import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -6,6 +5,7 @@ from typing import Any
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from app.models.article import EvalScore
 from app.prompts.judge_v1 import (
@@ -17,6 +17,14 @@ from app.prompts.judge_v1 import (
 # Gemini 2.5 Pro pricing (USD per 1M tokens), late-2025
 _PRICE_PRO_INPUT_PER_M = 1.25
 _PRICE_PRO_OUTPUT_PER_M = 5.00
+
+
+class _JudgeResponse(BaseModel):
+    """Wire schema enforced by Vertex AI for judge responses."""
+
+    score: float = Field(ge=0.0, le=10.0)
+    issues: list[str] = Field(default_factory=list)
+    reasoning: str
 
 
 def _pro_cost(tokens_in: int, tokens_out: int) -> float:
@@ -56,8 +64,13 @@ class GeminiJudge:
         config = types.GenerateContentConfig(
             system_instruction=JUDGE_SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
+            response_schema=_JudgeResponse,
             temperature=0.1,
             max_output_tokens=2048,
+            # Gemini 2.5 Pro thinks by default with a dynamic budget of up to
+            # 8,192 tokens.  Keep this simple classification bounded so the
+            # response is not truncated before its JSON object is complete.
+            thinking_config=types.ThinkingConfig(thinking_budget=128),
         )
         t0 = time.perf_counter()
         response = self._client.models.generate_content(
@@ -67,13 +80,13 @@ class GeminiJudge:
         )
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        raw = json.loads(str(response.text))
+        raw = _JudgeResponse.model_validate_json(str(response.text))
         eval_score = EvalScore(
-            score=float(raw["score"]),
+            score=raw.score,
             judge_model=self._model,
             judged_at=datetime.now(UTC),
-            issues=list(raw.get("issues", [])),
-            reasoning=str(raw.get("reasoning", "")),
+            issues=raw.issues,
+            reasoning=raw.reasoning,
         )
 
         tokens_in = getattr(response.usage_metadata, "prompt_token_count", 0) or 0

@@ -25,3 +25,9 @@ def test_judge_parses_response_into_pydantic_eval_score() -> None:
     assert result.eval_score.issues == ["missing_ticker:TSLA"]
     assert result.eval_score.judge_model == "gemini-2.5-pro"
     assert result.cost_usd > 0
+
+    config = fake_client.models.generate_content.call_args.kwargs["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is not None
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_budget == 128

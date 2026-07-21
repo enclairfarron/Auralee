@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 Source = Literal["hn", "reuters", "wsj"]
 SentimentLabel = Literal["bullish", "bearish", "neutral"]
@@ -79,6 +79,11 @@ class Article(BaseModel):
     processed_at: datetime
     language: str
 
+    raw_content_gcs_uri: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("raw_content_gcs_uri", "raw_html_gcs_uri"),
+    )
+    # Legacy HTML-specific field. New consumers should use raw_content_gcs_uri.
     raw_html_gcs_uri: str | None = None
     clean_text_chars: int = 0
 

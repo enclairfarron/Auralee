@@ -57,6 +57,7 @@ async def test_fetch_one_returns_html_payload_when_url_reachable(httpx_mock: HTT
 
     assert payload.source == "hn"
     assert payload.url == "https://example.com/article"
+    assert payload.published_at == c.published_at
     assert payload.raw.kind == "html"
 
 
@@ -80,3 +81,4 @@ async def test_fetch_one_falls_back_to_text_on_fetch_failure(httpx_mock: HTTPXMo
 
     assert payload.raw.kind == "text"
     assert payload.raw.title == "A title"
+    assert payload.published_at == c.published_at

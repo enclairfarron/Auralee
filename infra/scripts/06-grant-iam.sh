@@ -17,12 +17,15 @@ bind_project_role() {
 # Runtime SA
 for role in roles/datastore.user \
             roles/secretmanager.secretAccessor \
+            roles/aiplatform.user \
             roles/logging.logWriter \
             roles/cloudtrace.agent ; do
   bind_project_role "${RUNTIME_SA}" "${role}"
 done
 log "Granting storage.objectAdmin on ${RAW_BUCKET} to runtime SA"
-gsutil iam ch "serviceAccount:${RUNTIME_SA}:roles/storage.objectAdmin" "gs://${RAW_BUCKET}"
+gcloud storage buckets add-iam-policy-binding "gs://${RAW_BUCKET}" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role=roles/storage.objectAdmin >/dev/null
 
 # Cloud Build worker SA
 for role in roles/artifactregistry.writer \
@@ -46,7 +49,7 @@ done
 # yet (first-ever build), this binding is skipped — re-run this script once
 # the bucket exists.
 STAGING_BUCKET="gs://${PROJECT_ID}_cloudbuild"
-if gsutil ls "${STAGING_BUCKET}" >/dev/null 2>&1; then
+if gcloud storage buckets describe "${STAGING_BUCKET}" >/dev/null 2>&1; then
   log "Granting deployer storage.objectAdmin on ${STAGING_BUCKET}"
   gcloud storage buckets add-iam-policy-binding "${STAGING_BUCKET}" \
     --member="serviceAccount:${DEPLOYER_SA}" --role=roles/storage.objectAdmin >/dev/null

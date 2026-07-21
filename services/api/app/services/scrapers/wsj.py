@@ -16,14 +16,14 @@ paywalled WSJ content using user's subscription cookie." The architecture
 fix is to move WSJ scraping to the desktop client (Tauri app on user's
 machine, runs from residential IP), planned for Week 2.
 
-For Phase 1, the WSJ cron continues to run hourly and fail (logs the
-attempt + result for the M2 evaluation metric). The /admin/runs collection
-captures per-run error counts. Day-7 evaluation will show
-wsj_success_rate = 0% — that's accurate and informative.
+The server implementation remains available only for an explicit diagnostic.
+The checked-in scheduler script pauses the WSJ job, and WSJ is not a P1
+scorecard gate. The planned desktop spike keeps the subscription session on
+the user's machine and uses residential egress.
 
 Possible alternative paths NOT taken (cost / scope reasons):
   - residential proxy service (BrightData/Oxylabs, $50-300/mo): out of PoC budget
-  - drop WSJ entirely: would change source enum / scheduler config / docs
+  - remove the diagnostic implementation entirely: deferred until the desktop spike
   - RSS-description fallback (like MarketWatch): defeats the "subscription
     benefit" core value prop; user explicitly chose to defer instead
 ============================================================================
@@ -116,9 +116,7 @@ class WSJScraper(BaseScraper):
                 timeout=20,
             )
         if resp.status_code != 200:
-            raise WSJCookieExpiredError(
-                f"WSJ returned {resp.status_code} for {candidate.url}"
-            )
+            raise WSJCookieExpiredError(f"WSJ returned {resp.status_code} for {candidate.url}")
         html = resp.text
         if any(m in html for m in _PAYWALL_MARKERS) or len(html) < _MIN_HTML_LEN:
             raise WSJCookieExpiredError(f"paywall or short response for {candidate.url}")
@@ -126,6 +124,7 @@ class WSJScraper(BaseScraper):
             source="wsj",
             source_id=candidate.source_id,
             url=candidate.url,
+            published_at=candidate.published_at,
             fetched_at=datetime.now(UTC),
             raw=RawHtml(kind="html", html=html),
         )

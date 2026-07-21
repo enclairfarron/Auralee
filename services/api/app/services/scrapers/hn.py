@@ -49,7 +49,6 @@ class HNScraper(BaseScraper):
             return None
 
     async def fetch_one(self, candidate: Candidate) -> IngestPayload:
-        published_at = candidate.published_at or datetime.now(UTC)
         try:
             r = await self._http.get(candidate.url, timeout=10.0)
             r.raise_for_status()
@@ -57,6 +56,7 @@ class HNScraper(BaseScraper):
                 source="hn",
                 source_id=candidate.source_id,
                 url=candidate.url,
+                published_at=candidate.published_at,
                 fetched_at=datetime.now(UTC),
                 raw=RawHtml(kind="html", html=r.text),
             )
@@ -69,11 +69,16 @@ class HNScraper(BaseScraper):
                 source="hn",
                 source_id=candidate.source_id,
                 url=candidate.url,
+                published_at=candidate.published_at,
                 fetched_at=datetime.now(UTC),
                 raw=RawText(
                     kind="text",
                     title=candidate.title or "",
                     body=candidate.title or "",
-                    metadata={"published_at": published_at.isoformat()},
+                    metadata=(
+                        {"published_at": candidate.published_at.isoformat()}
+                        if candidate.published_at
+                        else {}
+                    ),
                 ),
             )

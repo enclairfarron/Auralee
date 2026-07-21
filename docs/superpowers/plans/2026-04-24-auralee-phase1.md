@@ -1,5 +1,9 @@
 # Auralee Phase 1 Implementation Plan
 
+> **Historical implementation record.** Do not use the embedded scheduler commands or scorecard
+> as the current runbook. See [`docs/roadmap.md`](../../roadmap.md) and `infra/scripts/` for the
+> active plan; they supersede conflicting steps below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up a single FastAPI service on Cloud Run that ingests news from Hacker News, Reuters, and WSJ, processes via Gemini 2.5 Flash, refreshes daily US equity prices via yfinance, and writes everything to Firestore — instrumented with M2 regex sanity checks and M3 LLM-as-Judge so the user can decide on day 7 whether to build the desktop app.
@@ -102,7 +106,7 @@ infra/scripts/
 ├── _common.sh                 # PROJECT_ID, REGION, SAs as exported vars; helper fns
 ├── 00-bootstrap.sh            # Enable 10 APIs
 ├── 01-create-service-accounts.sh   # 4 SAs
-├── 02-create-secrets.sh       # 3 empty secrets
+├── 02-create-secrets.sh       # 2 empty secrets
 ├── 03-create-buckets.sh       # GCS auralee-api-server-raw
 ├── 04-create-firestore.sh     # Native mode @ us-east1
 ├── 05-create-artifact-registry.sh  # Docker repo "api"
@@ -644,7 +648,7 @@ APIS=(
   cloudscheduler.googleapis.com
   storage.googleapis.com
   logging.googleapis.com
-  generativelanguage.googleapis.com
+  aiplatform.googleapis.com
   cloudbuild.googleapis.com
   iamcredentials.googleapis.com
 )
@@ -739,12 +743,10 @@ create_secret() {
   fi
 }
 
-create_secret GEMINI_API_KEY
 create_secret WSJ_COOKIE
 create_secret ADMIN_TOKEN
 
 log "Done. Populate values manually:"
-log "  echo -n 'YOUR_KEY' | gcloud secrets versions add GEMINI_API_KEY --data-file=-"
 log "  pbpaste | gcloud secrets versions add WSJ_COOKIE --data-file=-"
 log "  openssl rand -hex 32 | gcloud secrets versions add ADMIN_TOKEN --data-file=-"
 ```
@@ -865,6 +867,7 @@ bind_project_role() {
 # Runtime SA
 for role in roles/datastore.user \
             roles/secretmanager.secretAccessor \
+            roles/aiplatform.user \
             roles/logging.logWriter \
             roles/cloudtrace.agent ; do
   bind_project_role "${RUNTIME_SA}" "${role}"
@@ -1037,7 +1040,7 @@ jobs:
             --min-instances 0 --max-instances 3 \
             --concurrency 10 --timeout 600 --execution-environment gen2 \
             --set-env-vars "GCP_PROJECT=${PROJECT_ID},GCP_REGION=${REGION},LOG_LEVEL=INFO,PROMPT_VERSION=v1" \
-            --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
+            --set-secrets "WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
 ```
 
 - [ ] **Step 3: Commit**
@@ -1082,9 +1085,6 @@ Open https://github.com/enclairfarron/Auralee/settings/secrets/actions, click "N
 - [ ] **Step 4: Populate Secret Manager values**
 
 ```bash
-# Gemini API key (get from https://aistudio.google.com/apikey)
-echo -n 'YOUR_GEMINI_KEY' | gcloud secrets versions add GEMINI_API_KEY --data-file=-
-
 # WSJ cookie: open Safari → wsj.com → DevTools Network → copy Cookie header → paste
 pbpaste | gcloud secrets versions add WSJ_COOKIE --data-file=-
 
@@ -1877,7 +1877,6 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # Secrets (mounted as env by Cloud Run via --set-secrets)
-    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     wsj_cookie: str = Field(default="", alias="WSJ_COOKIE")
     admin_token: str = Field(default="", alias="ADMIN_TOKEN")
 
@@ -2735,7 +2734,7 @@ def test_extract_parses_response_into_pydantic(fake_response_json: str) -> None:
     fake_client = MagicMock()
     fake_client.models.generate_content.return_value = fake_response
 
-    extractor = GeminiExtractor(api_key="fake", model="gemini-2.5-flash", _client=fake_client)
+    extractor = GeminiExtractor(model="gemini-2.5-flash", _client=fake_client)
     result: ExtractionResult = extractor.extract(
         source="wsj",
         url="https://x",
@@ -2804,12 +2803,30 @@ class ExtractionResult:
 class GeminiExtractor:
     def __init__(
         self,
-        api_key: str,
         model: str = "gemini-2.5-flash",
+        project: str | None = None,
+        location: str = "us-east1",
         _client: Any | None = None,
     ) -> None:
         self._model = model
-        self._client = _client or genai.Client(api_key=api_key)
+        self._client = _client or genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+        )
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def check_health(self) -> None:
+        response = self._client.models.count_tokens(
+            model=self._model,
+            contents="Auralee Vertex AI health check",
+        )
+        total_tokens = getattr(response, "total_tokens", None)
+        if not isinstance(total_tokens, int) or total_tokens < 1:
+            raise RuntimeError("Vertex AI countTokens returned no token count")
 
     def extract(
         self,
@@ -3317,7 +3334,11 @@ def get_secrets() -> SecretClient:
 @lru_cache(maxsize=1)
 def get_extractor() -> GeminiExtractor:
     s = get_settings()
-    return GeminiExtractor(api_key=s.gemini_api_key, model=s.extraction_model)
+    return GeminiExtractor(
+        model=s.extraction_model,
+        project=s.gcp_project,
+        location=s.gcp_region,
+    )
 
 
 def get_ingest_service(
@@ -4756,7 +4777,7 @@ def test_judge_parses_response_into_pydantic_eval_score() -> None:
     fake_client = MagicMock()
     fake_client.models.generate_content.return_value = fake_response
 
-    judge = GeminiJudge(api_key="fake", model="gemini-2.5-pro", _client=fake_client)
+    judge = GeminiJudge(model="gemini-2.5-pro", _client=fake_client)
     result: JudgeResult = judge.judge(
         article_url="https://x",
         clean_text="Some text." * 400,
@@ -4818,12 +4839,17 @@ class JudgeResult:
 class GeminiJudge:
     def __init__(
         self,
-        api_key: str,
         model: str = "gemini-2.5-pro",
+        project: str | None = None,
+        location: str = "us-east1",
         _client: Any | None = None,
     ) -> None:
         self._model = model
-        self._client = _client or genai.Client(api_key=api_key)
+        self._client = _client or genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+        )
 
     def judge(self, *, article_url: str, clean_text: str, extraction_json: str) -> JudgeResult:
         user_msg = build_judge_user_message(article_url, clean_text, extraction_json)
@@ -5010,7 +5036,11 @@ from app.services.judge import GeminiJudge
 @lru_cache(maxsize=1)
 def get_judge() -> GeminiJudge:
     s = get_settings()
-    return GeminiJudge(api_key=s.gemini_api_key, model=s.judge_model)
+    return GeminiJudge(
+        model=s.judge_model,
+        project=s.gcp_project,
+        location=s.gcp_region,
+    )
 ```
 
 - [ ] **Step 2: Append routes to `services/api/app/routers/cron.py`**
@@ -5463,8 +5493,14 @@ async def get_stats_summary(
 async def healthz_detail(
     repo: Annotated[FirestoreRepo, Depends(get_repo)],
     secrets: Annotated[SecretClient, Depends(get_secrets)],
+    extractor: Annotated[GeminiExtractor, Depends(get_extractor)],
 ) -> dict:
-    out = {"firestore": False, "secrets_wsj_cookie": False, "secrets_gemini_key": False}
+    out = {
+        "firestore": False,
+        "secrets_wsj_cookie": False,
+        "vertex_ai": False,
+        "vertex_model": extractor.model,
+    }
     try:
         repo.list_all_tickers()
         out["firestore"] = True
@@ -5476,10 +5512,10 @@ async def healthz_detail(
     except Exception as e:  # noqa: BLE001
         out["secrets_wsj_cookie_error"] = str(e)[:200]
     try:
-        v = secrets.get("GEMINI_API_KEY")
-        out["secrets_gemini_key"] = bool(v)
+        extractor.check_health()
+        out["vertex_ai"] = True
     except Exception as e:  # noqa: BLE001
-        out["secrets_gemini_key_error"] = str(e)[:200]
+        out["vertex_ai_error"] = str(e)[:200]
     return out
 
 
@@ -5713,8 +5749,9 @@ curl -s -H "Authorization: Bearer ${AUTH}" -H "X-Admin-Token: ${ADMIN}" \
   "${SERVICE_URL}/admin/healthz-detail" | jq
 ```
 
-Expected: JSON with `firestore: true`, `secrets_wsj_cookie: true`, `secrets_gemini_key: true`.
-If any is false, fix that secret (see Task 0.12 Step 4) before proceeding.
+Expected: JSON with `firestore: true`, `secrets_wsj_cookie: true`, and
+`vertex_ai: true`. If Vertex is false, verify the API, model region, ADC, and
+runtime `roles/aiplatform.user`; if the cookie is false, refresh that secret.
 
 - [ ] **Step 4: Smoke-test `/cron/scrape?source=hn` (manually)**
 
@@ -6034,7 +6071,7 @@ Prereq: GCP project `auralee-api-server` exists with billing.
 ./infra/scripts/05-create-artifact-registry.sh
 ./infra/scripts/06-grant-iam.sh
 ./infra/scripts/07-setup-wif.sh
-# Then: populate GEMINI_API_KEY, WSJ_COOKIE, ADMIN_TOKEN in Secret Manager;
+# Then: populate WSJ_COOKIE and ADMIN_TOKEN in Secret Manager;
 # add GCP_PROJECT_NUMBER to GitHub repo secrets; push to main.
 
 # Post-deploy
@@ -6135,10 +6172,9 @@ curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
 | Env var | Where set | Used by |
 |---|---|---|
 | `GCP_PROJECT` | Cloud Run `--set-env-vars` | `app.config.Settings.gcp_project` |
-| `GCP_REGION` | Cloud Run `--set-env-vars` | documentation/logs |
+| `GCP_REGION` | Cloud Run `--set-env-vars` | Vertex AI client location |
 | `LOG_LEVEL` | Cloud Run `--set-env-vars` | `logging_setup.configure_logging` |
 | `PROMPT_VERSION` | Cloud Run `--set-env-vars` | Reserved (current prompts hard-code) |
-| `GEMINI_API_KEY` | Cloud Run `--set-secrets` | `GeminiExtractor`, `GeminiJudge` |
 | `WSJ_COOKIE` | Cloud Run `--set-secrets` | `WSJScraper` via `SecretClient` |
 | `ADMIN_TOKEN` | Cloud Run `--set-secrets` | `require_admin_token` dep |
 | `RAW_BUCKET` | defaulted in `Settings` | `RawHtmlArchiver` |

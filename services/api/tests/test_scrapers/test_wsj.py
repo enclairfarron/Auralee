@@ -75,6 +75,7 @@ async def test_fetch_one_uses_curl_cffi_with_safari_impersonate_and_cookie() -> 
     assert sent_headers["Referer"] == "https://www.wsj.com/"
     # Returned payload shape
     assert payload.source == "wsj"
+    assert payload.published_at == _make_candidate().published_at
     assert payload.raw.kind == "html"
 
 

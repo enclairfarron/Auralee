@@ -16,7 +16,7 @@ APIS=(
   cloudscheduler.googleapis.com
   storage.googleapis.com
   logging.googleapis.com
-  generativelanguage.googleapis.com
+  aiplatform.googleapis.com
   cloudbuild.googleapis.com
   iamcredentials.googleapis.com
 )

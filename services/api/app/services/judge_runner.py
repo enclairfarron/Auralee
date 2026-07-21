@@ -8,12 +8,15 @@ from app.services.judge import GeminiJudge
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LOOKBACK_HOURS = 72
+DEFAULT_BATCH_SIZE = 20
+
 
 async def run_eval_judge(
     repo: FirestoreRepo,
     judge: GeminiJudge,
-    lookback_hours: int = 24,
-    limit: int = 200,
+    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
+    limit: int = DEFAULT_BATCH_SIZE,
 ) -> dict[str, Any]:
     run = Run(id="", kind="eval-judge", started_at=datetime.now(UTC))
     after = datetime.now(UTC) - timedelta(hours=lookback_hours)

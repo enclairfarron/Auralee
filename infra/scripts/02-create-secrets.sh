@@ -16,11 +16,9 @@ create_secret() {
   fi
 }
 
-create_secret GEMINI_API_KEY
 create_secret WSJ_COOKIE
 create_secret ADMIN_TOKEN
 
 log "Done. Populate values manually:"
-log "  echo -n 'YOUR_KEY' | gcloud secrets versions add GEMINI_API_KEY --data-file=-"
 log "  pbpaste | gcloud secrets versions add WSJ_COOKIE --data-file=-"
-log "  openssl rand -hex 32 | gcloud secrets versions add ADMIN_TOKEN --data-file=-"
+log '  admin_token=$(openssl rand -hex 32); printf %s "${admin_token}" | gcloud secrets versions add ADMIN_TOKEN --data-file=-'

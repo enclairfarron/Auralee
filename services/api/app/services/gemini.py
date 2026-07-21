@@ -55,6 +55,27 @@ class GeminiExtractor:
             location=location,
         )
 
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def check_health(self) -> None:
+        """Verify that the configured Vertex model is callable with current ADC.
+
+        ``count_tokens`` reaches the same regional Vertex AI publisher-model
+        endpoint as extraction without generating content or incurring generation
+        cost.  A local configuration-only check could report healthy while the
+        API is disabled, the model/region is invalid, or the runtime service
+        account lacks permission.
+        """
+        response = self._client.models.count_tokens(
+            model=self._model,
+            contents="Auralee Vertex AI health check",
+        )
+        total_tokens = getattr(response, "total_tokens", None)
+        if not isinstance(total_tokens, int) or total_tokens < 1:
+            raise RuntimeError("Vertex AI countTokens returned no token count")
+
     def extract(
         self,
         *,

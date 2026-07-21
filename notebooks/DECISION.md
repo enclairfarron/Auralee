@@ -1,32 +1,59 @@
-# Week-1 Decision Procedure
+# Viability Decision Procedure
 
-Run this on Day 7 (or later) to produce the go/no-go verdict.
+Run this only after P0 is complete and the pipeline has collected an uninterrupted 14–30 day
+window. A deployment or a single good day is not a product-validation result.
 
-## Steps
+## Before evaluation
 
-1. `cd /Users/farron/code/Auralee && gcloud auth application-default login`
-2. `pip install -r notebooks/requirements.txt` (or use uv venv)
-3. Open `notebooks/analyze.ipynb` in Jupyter / VS Code
-4. Run all cells top to bottom
-5. Read the final **Scorecard** DataFrame
+1. Confirm the required Firestore indexes report `READY`.
+2. Confirm the HN and MarketWatch scheduler jobs covered at least 80% of their hourly schedule.
+3. Confirm the source mix did not change during the measured window; keep new adapters in shadow
+   storage.
+4. From the repository root, run `gcloud auth application-default login`.
+5. Install `notebooks/requirements.txt` in a notebook environment.
+6. Set `EVALUATION_DAYS` in `notebooks/analyze.ipynb` to the completed 14–30 day window, then run
+   every cell top to bottom without manual data edits.
+
+## Read the scorecard
+
+The current scorecard has eight rows:
+
+1. `volume/day`
+2. `m2_precision_rate`
+3. `m3_avg_score`
+4. `m2_m3_disagree_rate`
+5. `price_signal_spread`
+6. `avg_cost_per_article`
+7. `candidate_success_rate` — worse of HN and MarketWatch
+8. `source_run_success_rate` — worse of HN and MarketWatch
+
+`evaluable=false` is **insufficient evidence**, never a pass. WSJ is deliberately absent: its
+cloud job is paused, and the residential desktop experiment is a separate milestone.
 
 ## Verdict
 
-- **7/7 pass** -> Proceed to Week 2 (desktop client + user memory). Open a new spec under `docs/superpowers/specs/`.
-- **5-6/7 pass** -> Iterate one more week. Investigate red rows; common culprits:
-  - `volume/day` red -> HN/Reuters/WSJ scrapers partly broken; check `runs` errors.
-  - `m2_precision_rate` red -> ticker dictionary missing entries; expand `app/data/tickers.json`.
-  - `m3_avg_score` red -> prompt quality; bump `PROMPT_VERSION` and re-run a sample.
-  - `m2_m3_disagree_rate` red -> judge quality issue; widen judge input (full GCS HTML vs. proxy text).
-  - `price_signal_spread` red -> CORE HYPOTHESIS at risk; DO NOT proceed to desktop app before
-    re-examining product definition.
-  - `avg_cost_per_article` red -> should not happen at PoC volume; investigate token usage.
-  - `wsj_success_rate` red -> cookie expired or IP blocked.
-- **Metric 5 (price_signal_spread) red with others green** -> product definition needs revisiting
-  before desktop app. Brainstorm again.
+- **Green:** every quality, cost, and collection row is evaluable and passes; the price result has
+  adequate bullish/bearish samples, confidence intervals, and a market/sector-adjusted robustness
+  check. Record the decision, then start the desktop vertical slice in `docs/roadmap.md`.
+- **Yellow:** the pipeline gates pass but the price evidence is inconclusive, or a metric lacks
+  coverage. Extend the fixed-source collection window or reposition the product around research
+  synthesis and reading memory. Do not call the point estimate a pass.
+- **Red:** extraction quality or per-source delivery fails, or sufficiently powered price evidence
+  contradicts the core hypothesis. Revisit the source or product definition before expanding UI.
 
-## After the verdict
+## Diagnosis map
 
-- GREEN: write Week 2 spec via `/superpowers:brainstorming` then `/superpowers:writing-plans`.
-- YELLOW: file issues on GitHub for each red metric, fix, wait another 3-7 days, re-evaluate.
-- RED: revisit product vision; do not proceed to UI work.
+- `volume/day`: inspect HN/MarketWatch runs and candidate counts by source.
+- `m2_precision_rate`: review ticker dictionary and false positives against archived source input.
+- `m3_avg_score`: review prompt/schema failures against the immutable raw archive before changing
+  `PROMPT_VERSION`.
+- `m2_m3_disagree_rate`: inspect only the both-evaluated sample; do not fill missing judge results.
+- `price_signal_spread`: inspect session class, missing-bar status, per-class counts, uncertainty,
+  and adjusted returns. Regular-session articles require intraday data.
+- `avg_cost_per_article`: inspect token use and source content scope.
+- `candidate_success_rate`: inspect fetch/clean/duplicate outcomes for the worse source.
+- `source_run_success_rate`: inspect scheduler coverage and zero-attempt/list-candidate failures for
+  the worse source.
+
+Write the dated verdict, window boundaries, code revision, sample sizes, coverage, and known data
+loss into the project decision log before changing the experiment or beginning the next phase.

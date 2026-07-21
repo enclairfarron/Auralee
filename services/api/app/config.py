@@ -16,8 +16,6 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # Secrets (mounted as env by Cloud Run via --set-secrets)
-    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    wsj_cookie: str = Field(default="", alias="WSJ_COOKIE")
     admin_token: str = Field(default="", alias="ADMIN_TOKEN")
 
     # Prompt versioning

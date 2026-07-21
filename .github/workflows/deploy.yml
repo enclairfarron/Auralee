@@ -55,4 +55,4 @@ jobs:
             --min-instances 0 --max-instances 3 \
             --concurrency 10 --timeout 600 --execution-environment gen2 \
             --set-env-vars "GCP_PROJECT=${PROJECT_ID},GCP_REGION=${REGION},LOG_LEVEL=INFO,PROMPT_VERSION=v1" \
-            --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WSJ_COOKIE=WSJ_COOKIE:latest,ADMIN_TOKEN=ADMIN_TOKEN:latest"
+            --set-secrets "ADMIN_TOKEN=ADMIN_TOKEN:latest"

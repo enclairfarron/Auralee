@@ -10,7 +10,11 @@ uv sync
 uv run uvicorn app.main:app --reload --port 8080
 ```
 
-Health check: `curl http://localhost:8080/healthz`
+Health check: `curl http://localhost:8080/health`
+
+Gemini calls use Vertex AI with Application Default Credentials. Set
+`GCP_PROJECT` and `GCP_REGION`; no Gemini API key is required. The runtime
+service account needs `roles/aiplatform.user`.
 
 ## Tests
 

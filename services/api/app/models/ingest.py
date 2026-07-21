@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.models.article import Extraction, Source
 
@@ -28,6 +28,7 @@ class IngestPayload(BaseModel):
     source: Source
     source_id: str
     url: str
+    published_at: datetime | None = None
     fetched_at: datetime
     raw: Raw
 
@@ -38,6 +39,11 @@ class IngestMeta(BaseModel):
     cost_usd: float
     latency_ms: int
     prompt_version: str
+    raw_content_gcs_uri: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("raw_content_gcs_uri", "raw_html_gcs_uri"),
+    )
+    # Legacy HTML-specific field. New consumers should use raw_content_gcs_uri.
     raw_html_gcs_uri: str | None = None
 
 

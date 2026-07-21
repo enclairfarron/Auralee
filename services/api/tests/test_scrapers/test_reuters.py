@@ -44,6 +44,7 @@ async def test_fetch_one_returns_text_payload_from_rss_description() -> None:
         payload = await scraper.fetch_one(c)
 
     assert payload.source == "reuters"
+    assert payload.published_at == c.published_at
     assert payload.raw.kind == "text"
     assert "Apple beats Q2" in payload.raw.body
     assert "iPhone sales" in payload.raw.body

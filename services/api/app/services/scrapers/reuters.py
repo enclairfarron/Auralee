@@ -66,12 +66,17 @@ class ReutersScraper(BaseScraper):
             source="reuters",
             source_id=candidate.source_id,
             url=candidate.url,
+            published_at=candidate.published_at,
             fetched_at=datetime.now(UTC),
             raw=RawText(
                 kind="text",
                 title=candidate.title or "",
                 body=body,
-                metadata={"published_at": (candidate.published_at or datetime.now(UTC)).isoformat()},
+                metadata=(
+                    {"published_at": candidate.published_at.isoformat()}
+                    if candidate.published_at
+                    else {}
+                ),
             ),
         )
 
